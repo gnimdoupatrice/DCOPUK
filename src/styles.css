@@ -59,6 +59,14 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-uk-navy: var(--uk-navy);
+  --color-uk-blue: var(--uk-blue);
+  --color-uk-royal: var(--uk-royal);
+  --color-uk-gold: var(--uk-gold);
+  --color-uk-gold-soft: var(--uk-gold-soft);
+  --color-uk-green: var(--uk-green);
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Roboto", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -95,6 +103,12 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+  --uk-navy: oklch(0.23 0.055 268);
+  --uk-blue: oklch(0.35 0.155 268);
+  --uk-royal: oklch(0.37 0.16 268);
+  --uk-gold: oklch(0.84 0.17 95);
+  --uk-gold-soft: oklch(0.9 0.12 95);
+  --uk-green: oklch(0.51 0.135 150);
 }
 
 .dark {
@@ -140,5 +154,6 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-body);
   }
 }
