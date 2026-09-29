@@ -65,6 +65,7 @@
   --color-uk-gold: var(--uk-gold);
   --color-uk-gold-soft: var(--uk-gold-soft);
   --color-uk-green: var(--uk-green);
+  --color-uk-footer: var(--uk-footer);
   --font-display: "Playfair Display", Georgia, serif;
   --font-body: "Roboto", ui-sans-serif, system-ui, sans-serif;
 }
@@ -108,7 +109,8 @@
   --uk-royal: oklch(0.37 0.16 268);
   --uk-gold: oklch(0.84 0.17 95);
   --uk-gold-soft: oklch(0.9 0.12 95);
-  --uk-green: oklch(0.51 0.135 150);
+  --uk-green: oklch(0.57 0.19 145);
+  --uk-footer: oklch(0.12 0 0);
 }
 
 .dark {

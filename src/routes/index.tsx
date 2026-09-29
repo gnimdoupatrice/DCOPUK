@@ -9,6 +9,7 @@ import {
   Handshake,
   Landmark,
   Plane,
+  Scale,
   Star,
   Target,
 } from "lucide-react";
@@ -82,6 +83,7 @@ const operationalUnits = [
     ],
     panelClass: "bg-uk-blue text-white",
     dotClass: "bg-uk-blue",
+    Icon: Scale,
   },
   {
     title: "Relations Internationales",
@@ -96,6 +98,7 @@ const operationalUnits = [
     ],
     panelClass: "bg-uk-gold text-uk-navy",
     dotClass: "bg-uk-gold",
+    Icon: Globe,
   },
   {
     title: "Appui aux Projets",
@@ -110,6 +113,7 @@ const operationalUnits = [
     ],
     panelClass: "bg-uk-green text-white",
     dotClass: "bg-uk-green",
+    Icon: FolderKanban,
   },
 ];
 
@@ -279,7 +283,9 @@ function Index() {
                 className="grid overflow-hidden rounded-2xl shadow-sm ring-1 ring-border md:grid-cols-[2fr_3fr]"
               >
                 <div className={`p-8 ${unit.panelClass}`}>
-                  <div className="h-12 w-12 rounded-lg bg-white/20" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/20">
+                    <unit.Icon className="h-6 w-6" aria-hidden="true" />
+                  </div>
                   <h3 className="mt-6 text-xl font-bold">{unit.title}</h3>
                   <p className="mt-3 text-sm leading-relaxed opacity-90">{unit.mission}</p>
                 </div>

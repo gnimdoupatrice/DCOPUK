@@ -60,7 +60,7 @@ const copyrightSocials = [
 
 export function UkFooter() {
   return (
-    <footer className="bg-uk-navy text-white">
+    <footer className="bg-uk-footer text-white">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         {/* Coordonnées officielles */}
         <div>
