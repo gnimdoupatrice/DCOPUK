@@ -60,48 +60,48 @@ const copyrightSocials = [
 
 export function UkFooter() {
   return (
-    <footer className="bg-uk-footer text-white">
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+    <footer className="bg-uk-footer text-uk-footer-text">
+      <div className="mx-auto grid max-w-[1360px] grid-cols-1 gap-x-8 px-4 pt-[60px] md:grid-cols-4 md:px-6">
         {/* Coordonnées officielles */}
-        <div>
+        <div className="mb-[60px]">
           <img
             src={ukLogoWhite}
             alt="Université de Kara"
             className="mb-4 h-12 w-auto"
           />
-          <p className="text-sm leading-relaxed text-white/90">
+          <p className="text-sm leading-relaxed text-uk-footer-text">
             <u>Campus Sud :</u> Route de l’ex ENI, BP : 43,
             <br />
             Kara – Togo,{" "}
             <a
               href="tel:+22826685228"
-              className="inline-flex items-center gap-1 text-white transition-colors hover:text-uk-gold"
+              className="inline-flex items-center gap-1 text-uk-footer-link transition-colors hover:text-uk-green"
             >
               <Phone className="h-3 w-3" /> +228 26 68 52 28
             </a>
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-white/90">
+          <p className="mt-3 text-sm leading-relaxed text-uk-footer-text">
             <u>Présidence :</u> Route Nationale N°1 BP : 404,
             <br />
             Kara – Togo,{" "}
             <a
               href="tel:+22826610285"
-              className="inline-flex items-center gap-1 text-white transition-colors hover:text-uk-gold"
+              className="inline-flex items-center gap-1 text-uk-footer-link transition-colors hover:text-uk-green"
             >
               <Phone className="h-3 w-3" /> +228 26 61 02 85
             </a>
           </p>
           <a
             href="mailto:contact@univkara.tg"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-white transition-colors hover:text-uk-gold"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-uk-footer-link transition-colors hover:text-uk-green"
           >
             <Mail className="h-3.5 w-3.5" /> contact@univkara.tg
           </a>
         </div>
 
         {footerColumns.map((col) => (
-          <nav key={col.title} aria-label={col.title}>
-            <h3 className="mb-4 text-base font-bold uppercase tracking-wide text-white">
+          <nav key={col.title} aria-label={col.title} className="mb-[60px]">
+            <h3 className="mb-6 border-b-2 border-uk-footer-link pb-3 text-[17px] font-bold text-white">
               {col.title}
             </h3>
             <ul className="space-y-2.5">
@@ -111,7 +111,7 @@ export function UkFooter() {
                     href={link.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-white/75 transition-colors hover:text-uk-gold"
+                    className="text-sm text-uk-footer-link transition-colors hover:text-uk-green"
                   >
                     {link.label}
                   </a>
@@ -123,7 +123,7 @@ export function UkFooter() {
       </div>
 
       <div className="border-t border-white/15">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-sm text-white/80 sm:flex-row sm:px-6">
+        <div className="mx-auto flex max-w-[1360px] flex-col items-center justify-between gap-3 px-4 py-5 text-sm text-uk-footer-muted sm:flex-row sm:px-6">
           <p>Copyright © {new Date().getFullYear()} Université de Kara. Tous droits réservés.</p>
           <div className="flex items-center gap-4">
             {copyrightSocials.map(({ label, href, Icon }) => (
@@ -134,7 +134,7 @@ export function UkFooter() {
                 rel="noopener noreferrer"
                 aria-label={label}
                 title={label}
-                className="text-white/70 transition-colors hover:text-uk-gold"
+                className="text-uk-footer-muted transition-colors hover:text-uk-green"
               >
                 <Icon className="h-4 w-4" />
               </a>

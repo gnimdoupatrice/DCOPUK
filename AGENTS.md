@@ -11,6 +11,6 @@
 
 ## Architecture
 
-- Portail DCOP à deux onglets : la vitrine publique « Service Public » vit sur `/` (src/routes/index.tsx), l'espace « Service Privé » sur `/service-prive` (placeholder noindex en attendant l'authentification). Le header partagé ne contient que le logo et les deux onglets, via `src/components/dcop/SiteHeader.tsx`; le footer institutionnel noir vit dans `UkFooter.tsx`.
+- Portail DCOP à deux onglets : la vitrine publique « Service Public » vit sur `/` (src/routes/index.tsx), l'espace « Service Privé » sur `/service-prive` (placeholder noindex en attendant l'authentification). Le header partagé ne contient que le logo et les deux onglets, via `src/components/dcop/SiteHeader.tsx`; le footer institutionnel bleu `#223ea4` vit dans `UkFooter.tsx`, conformément au site mère.
 - Les 5 cartes « Accès rapides » redirigent en externe vers les pages officielles univkara.tg (`target="_blank" rel="noopener noreferrer"`) — ne jamais dupliquer ces contenus en interne, et ne jamais réintroduire de section Actualités/Opportunités (exclue par le cahier des charges).
 
