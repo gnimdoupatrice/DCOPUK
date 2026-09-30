@@ -199,16 +199,16 @@ function Index() {
       <SiteHeader />
 
       {/* Hero — ouverture internationale */}
-      <section className="bg-gradient-to-br from-uk-royal via-uk-blue to-uk-navy px-4 py-16 text-white sm:px-6 sm:py-24">
+      <section className="bg-gradient-to-br from-uk-royal to-uk-navy px-4 py-16 text-white sm:px-6 sm:pb-[85px] sm:pt-[110px]">
         <div className="mx-auto max-w-4xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-uk-gold-soft">
             <Globe className="h-4 w-4" />
             Ouverture internationale
           </span>
-          <h1 className="mt-6 font-display text-4xl font-bold uppercase tracking-wider sm:text-5xl lg:text-6xl">
+          <h1 className="mt-6 font-display text-4xl font-extrabold uppercase tracking-wide sm:text-[47px]">
             Coopération <span className="text-uk-gold">& Partenariats</span>
           </h1>
-          <p className="mx-auto mt-6 max-w-3xl text-base leading-relaxed text-white/90 sm:text-lg">
+          <p className="mx-auto mt-6 max-w-[850px] text-base leading-relaxed text-white/90 sm:text-xl">
             L’Université de Kara cultive une politique d’ouverture dynamique pour s’affirmer comme
             un pôle d’excellence au Togo et à l’international. Cette ambition est portée par une
             structure dédiée qui transforme les visions en alliances concrètes : la Direction de la
@@ -216,13 +216,13 @@ function Index() {
           </p>
         </div>
 
-        <div className="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto mt-10 grid max-w-[900px] grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {keyFigures.map((fig) => (
             <div
               key={fig.label}
-              className="rounded-xl bg-white/10 px-6 py-8 text-center backdrop-blur-sm"
+              className="rounded-xl bg-white/10 p-4 text-center backdrop-blur-sm"
             >
-              <div className="text-4xl font-extrabold text-uk-gold">{fig.value}</div>
+              <div className="text-[30px] font-extrabold leading-none text-uk-gold">{fig.value}</div>
               <div className="mt-2 text-sm text-white/90">{fig.label}</div>
             </div>
           ))}
