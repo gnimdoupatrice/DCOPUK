@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
   ArrowLeft,
+  Bell,
   FileSignature,
+  FileText,
   Layers,
   Lock,
   LogOut,
@@ -14,13 +16,16 @@ import {
 } from "lucide-react";
 import ukEmblem from "@/assets/uk-emblem.png";
 import { supabase } from "@/lib/supabase";
+import { ConventionDrawer, envoyerPdf, logHistorique } from "@/components/dcop/ConventionDrawer";
 import {
   CADRES_PAR_POLE,
   DEFAULT_POLES,
+  SEUIL_ALERTE_JOURS,
   STATUT_INFO,
   calculerEcheance,
   calculerStatut,
   formatDate,
+  jouerSignalAlerte,
   joursRestants,
   type Convention,
   type Statut,
@@ -145,6 +150,11 @@ function Espace({ email }: { email: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Convention | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [alertNotice, setAlertNotice] = useState<number | null>(null);
+  const alertChecked = useRef(false);
   const [q, setQ] = useState("");
   const [fPole, setFPole] = useState("");
   const [fStatut, setFStatut] = useState<"" | Statut>("");
@@ -158,7 +168,17 @@ function Espace({ email }: { email: string }) {
     if (c.error) setLoadError("Impossible de charger le registre. Vérifiez que les tables ont bien été créées.");
     else {
       setLoadError(null);
-      setConventions((c.data ?? []) as Convention[]);
+      const list = (c.data ?? []) as Convention[];
+      setConventions(list);
+      if (!alertChecked.current) {
+        alertChecked.current = true;
+        const n = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= 0 && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS).length;
+        if (n > 0) {
+          setAlertNotice(n);
+          jouerSignalAlerte();
+          setTimeout(() => setAlertNotice(null), 10000);
+        }
+      }
     }
     if (!p.error && p.data?.length) {
       setPoles(Array.from(new Set([...DEFAULT_POLES, ...p.data.map((r) => r.nom as string)])));
@@ -170,9 +190,13 @@ function Espace({ email }: { email: string }) {
     load();
   }, []);
 
+  const actives = useMemo(() => conventions.filter((c) => !c.archived), [conventions]);
+  const selected = conventions.find((c) => c.id === selectedId) ?? null;
+
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
     return conventions
+      .filter((c) => (showArchived ? c.archived : !c.archived))
       .map((c) => ({ ...c, statut: calculerStatut(c.date_echeance), jours: joursRestants(c.date_echeance) }))
       .filter((c) => !fPole || c.pole === fPole)
       .filter((c) => !fStatut || c.statut === fStatut)
@@ -190,19 +214,19 @@ function Espace({ email }: { email: string }) {
         const eb = b.jours < 0 ? 1 : 0;
         return ea - eb || a.jours - b.jours;
       });
-  }, [conventions, q, fPole, fStatut]);
+  }, [conventions, q, fPole, fStatut, showArchived]);
 
   const stats = useMemo(() => {
-    const s = conventions.map((c) => calculerStatut(c.date_echeance));
-    const parPole = poles.map((p) => ({ pole: p, n: conventions.filter((c) => c.pole === p).length }));
+    const s = actives.map((c) => calculerStatut(c.date_echeance));
+    const parPole = poles.map((p) => ({ pole: p, n: actives.filter((c) => c.pole === p).length }));
     return {
-      total: conventions.length,
+      total: actives.length,
       alerte: s.filter((x) => x === "alerte" || x === "urgence").length,
       urgence: s.filter((x) => x === "urgence").length,
       expire: s.filter((x) => x === "expire").length,
       parPole,
     };
-  }, [conventions, poles]);
+  }, [actives, poles]);
 
   return (
     <div className="min-h-screen bg-muted font-body">
@@ -258,13 +282,24 @@ function Espace({ email }: { email: string }) {
         {/* Registre */}
         <section className="rounded-xl bg-card p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-bold text-uk-blue">Registre des conventions</h2>
-            <button
-              onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-uk-green px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-            >
-              <Plus className="h-4 w-4" /> Nouvelle convention
-            </button>
+            <h2 className="text-lg font-bold text-uk-blue">
+              {showArchived ? "Conventions clôturées / archivées" : "Registre des conventions"}
+            </h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+                Voir les archives
+              </label>
+              <button
+                onClick={() => {
+                  setEditing(null);
+                  setShowForm(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md bg-uk-green px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+              >
+                <Plus className="h-4 w-4" /> Nouvelle convention
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_200px]">
@@ -299,7 +334,8 @@ function Espace({ email }: { email: string }) {
 
           {loadError && <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{loadError}</p>}
 
-          <div className="mt-4 overflow-x-auto">
+          <p className="mt-3 text-xs text-muted-foreground">Cliquez sur une ligne pour ouvrir la fiche détaillée.</p>
+          <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="bg-uk-blue text-primary-foreground">
                 <tr>
@@ -325,14 +361,23 @@ function Espace({ email }: { email: string }) {
                   </tr>
                 ) : (
                   rows.map((c) => (
-                    <tr key={c.id} className="border-b border-border align-top">
+                    <tr
+                      key={c.id}
+                      onClick={() => setSelectedId(c.id)}
+                      onKeyDown={(e) => e.key === "Enter" && setSelectedId(c.id)}
+                      tabIndex={0}
+                      className="cursor-pointer border-b border-border align-top hover:bg-muted focus:bg-muted focus:outline-none"
+                    >
                       <td className="px-3 py-3">
                         <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUT_INFO[c.statut].className}`}>
                           {STATUT_INFO[c.statut].label}
                         </span>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="font-semibold text-foreground">{c.partenaire_nom}</p>
+                        <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                          {c.partenaire_nom}
+                          {c.pdf_path && <FileText className="h-3.5 w-3.5 text-uk-blue" aria-label="PDF joint" />}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {[c.partenaire_ville, c.partenaire_pays].filter(Boolean).join(", ")}
                         </p>
@@ -359,15 +404,57 @@ function Espace({ email }: { email: string }) {
         </section>
       </main>
 
+      {selected && (
+        <ConventionDrawer
+          convention={selected}
+          onClose={() => setSelectedId(null)}
+          onChanged={load}
+          onEdit={() => {
+            setEditing(selected);
+            setShowForm(true);
+          }}
+        />
+      )}
+
       {showForm && (
         <ConventionForm
           poles={poles}
+          initial={editing}
           onClose={() => setShowForm(false)}
           onSaved={() => {
             setShowForm(false);
+            setEditing(null);
             load();
           }}
         />
+      )}
+
+      {alertNotice !== null && (
+        <div
+          role="status"
+          className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border-l-4 border-uk-orange bg-card p-4 shadow-xl"
+        >
+          <Bell className="mt-0.5 h-5 w-5 shrink-0 text-uk-orange" />
+          <div className="text-sm">
+            <p className="font-semibold text-foreground">Veille des échéances</p>
+            <p className="text-muted-foreground">
+              {alertNotice} convention{alertNotice > 1 ? "s arrivent" : " arrive"} à échéance dans moins de 5 mois.
+            </p>
+            <button
+              onClick={() => {
+                setFStatut("");
+                setShowArchived(false);
+                setAlertNotice(null);
+              }}
+              className="mt-1 text-xs font-semibold text-uk-blue hover:underline"
+            >
+              Voir le registre
+            </button>
+          </div>
+          <button onClick={() => setAlertNotice(null)} aria-label="Fermer" className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );
