@@ -47,3 +47,44 @@ insert into public.poles (nom) values
   ('Mobilité Internationale'),
   ('Projets & Programmes')
 on conflict (nom) do nothing;
+
+-- ============================================================
+-- Mise à jour Module 2 (finalisation) — à exécuter aussi (idempotent)
+-- Archivage, document PDF, historique des actions
+-- ============================================================
+alter table public.conventions add column if not exists archived boolean not null default false;
+alter table public.conventions add column if not exists archived_at timestamptz;
+alter table public.conventions add column if not exists archive_note text;
+alter table public.conventions add column if not exists pdf_path text;
+
+create table if not exists public.convention_historique (
+  id uuid primary key default gen_random_uuid(),
+  convention_id uuid not null references public.conventions(id) on delete cascade,
+  action text not null,
+  note text,
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+grant select, insert, update, delete on public.convention_historique to authenticated;
+grant all on public.convention_historique to service_role;
+alter table public.convention_historique enable row level security;
+
+drop policy if exists "Personnel DCOP - historique" on public.convention_historique;
+create policy "Personnel DCOP - historique" on public.convention_historique
+  for all to authenticated using (true) with check (true);
+
+-- Stockage privé des conventions scannées (PDF)
+insert into storage.buckets (id, name, public)
+values ('conventions-pdf', 'conventions-pdf', false)
+on conflict (id) do nothing;
+
+drop policy if exists "Personnel DCOP - lecture PDF" on storage.objects;
+create policy "Personnel DCOP - lecture PDF" on storage.objects
+  for select to authenticated using (bucket_id = 'conventions-pdf');
+drop policy if exists "Personnel DCOP - envoi PDF" on storage.objects;
+create policy "Personnel DCOP - envoi PDF" on storage.objects
+  for insert to authenticated with check (bucket_id = 'conventions-pdf');
+drop policy if exists "Personnel DCOP - suppression PDF" on storage.objects;
+create policy "Personnel DCOP - suppression PDF" on storage.objects
+  for delete to authenticated using (bucket_id = 'conventions-pdf');
