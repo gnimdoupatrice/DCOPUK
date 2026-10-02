@@ -484,25 +484,30 @@ function Kpi({
 
 function ConventionForm({
   poles,
+  initial,
   onClose,
   onSaved,
 }: {
   poles: string[];
+  initial?: Convention | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [pole, setPole] = useState("");
+  const initCadres = initial ? (CADRES_PAR_POLE[initial.pole] ?? []) : [];
+  const initCadreConnu = !!initial && initCadres.includes(initial.cadre_juridique);
+  const [pole, setPole] = useState(initial?.pole ?? "");
   const [nouveauPole, setNouveauPole] = useState("");
-  const [cadre, setCadre] = useState("");
-  const [cadreLibre, setCadreLibre] = useState("");
-  const [nom, setNom] = useState("");
-  const [pays, setPays] = useState("");
-  const [ville, setVille] = useState("");
-  const [thematique, setThematique] = useState("");
-  const [signature, setSignature] = useState("");
-  const [duree, setDuree] = useState(60);
-  const [preavis, setPreavis] = useState(3);
-  const [reconduction, setReconduction] = useState("Expresse");
+  const [cadre, setCadre] = useState(initial ? (initCadreConnu ? initial.cadre_juridique : "__libre") : "");
+  const [cadreLibre, setCadreLibre] = useState(initial && !initCadreConnu ? initial.cadre_juridique : "");
+  const [nom, setNom] = useState(initial?.partenaire_nom ?? "");
+  const [pays, setPays] = useState(initial?.partenaire_pays ?? "");
+  const [ville, setVille] = useState(initial?.partenaire_ville ?? "");
+  const [thematique, setThematique] = useState(initial?.thematique ?? "");
+  const [signature, setSignature] = useState(initial?.date_signature ?? "");
+  const [duree, setDuree] = useState(initial?.duree_mois ?? 60);
+  const [preavis, setPreavis] = useState(initial?.preavis_mois ?? 3);
+  const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Expresse");
+  const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -518,12 +523,16 @@ function ConventionForm({
       setError("Veuillez renseigner le pôle et le cadre juridique.");
       return;
     }
+    if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
+      setError("Le document doit être un PDF de 20 Mo maximum.");
+      return;
+    }
     setBusy(true);
     setError(null);
     if (pole === "__new") {
       await supabase.from("poles").insert({ nom: poleFinal });
     }
-    const { error } = await supabase.from("conventions").insert({
+    const payload = {
       pole: poleFinal,
       cadre_juridique: cadreFinal,
       partenaire_nom: nom.trim(),
@@ -535,10 +544,27 @@ function ConventionForm({
       date_echeance: echeance,
       preavis_mois: preavis,
       reconduction,
-    });
+    };
+    const res = initial
+      ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
+      : await supabase.from("conventions").insert(payload).select("id").single();
+    if (res.error || !res.data) {
+      setBusy(false);
+      setError("Enregistrement impossible : " + (res.error?.message ?? "erreur inconnue"));
+      return;
+    }
+    const id = res.data.id as string;
+    await logHistorique(id, initial ? "Convention modifiée" : "Convention enregistrée");
+    if (pdf) {
+      const err = await envoyerPdf(id, pdf);
+      if (err) {
+        setBusy(false);
+        setError(err);
+        return;
+      }
+    }
     setBusy(false);
-    if (error) setError("Enregistrement impossible : " + error.message);
-    else onSaved();
+    onSaved();
   }
 
   return (
