@@ -46,6 +46,49 @@ export interface Convention {
   preavis_mois: number;
   reconduction: string;
   created_at: string;
+  archived?: boolean;
+  archived_at?: string | null;
+  archive_note?: string | null;
+  pdf_path?: string | null;
+}
+
+export interface HistoriqueEntry {
+  id: string;
+  convention_id: string;
+  action: string;
+  note: string | null;
+  created_at: string;
+}
+
+export const PDF_BUCKET = "conventions-pdf";
+export const PDF_MAX_OCTETS = 20 * 1024 * 1024;
+
+/** Ajoute des mois à une date ISO (yyyy-mm-dd). */
+export function ajouterMois(dateIso: string, mois: number): string {
+  return calculerEcheance(dateIso, mois);
+}
+
+/** Bip discret via Web Audio (aucun fichier son requis). */
+export function jouerSignalAlerte() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    [0, 0.25].forEach((t) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.18);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + t);
+      o.stop(ctx.currentTime + t + 0.2);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch {
+    /* navigateur sans audio : on ignore */
+  }
 }
 
 export type Statut = "actif" | "alerte" | "urgence" | "expire";
