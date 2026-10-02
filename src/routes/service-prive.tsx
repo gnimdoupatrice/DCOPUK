@@ -571,7 +571,7 @@ function ConventionForm({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/50 p-4 sm:py-10">
       <form onSubmit={submit} className="w-full max-w-2xl rounded-2xl bg-card p-6 shadow-2xl sm:p-8">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-uk-blue">Nouvelle convention</h3>
+          <h3 className="text-lg font-bold text-uk-blue">{initial ? "Modifier la convention" : "Nouvelle convention"}</h3>
           <button type="button" onClick={onClose} aria-label="Fermer" className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
@@ -640,6 +640,9 @@ function ConventionForm({
                   <option>Tacite</option>
                   <option>Non reconductible</option>
                 </select>
+              </Field>
+              <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
+                <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
               </Field>
             </div>
             {statut && (
