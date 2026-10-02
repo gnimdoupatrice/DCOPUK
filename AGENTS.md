@@ -17,3 +17,4 @@
 
 - L'Espace Privé (`/service-prive`, ssr:false) utilise le projet Supabase externe de l'utilisateur via `src/lib/supabase.ts` (clé publishable) ; le schéma vit dans `supabase/schema.sql` et doit être exécuté manuellement dans le tableau de bord Supabase, car l'agent n'a pas accès à cette base.
 - Les règles de statut des conventions (seuils J-150 / J-60) sont centralisées dans `src/lib/conventions.ts` — à modifier là uniquement.
+- La fiche détaillée, les actions du Directeur (avenant, archivage, modification, suppression) et la gestion des PDF vivent dans `src/components/dcop/ConventionDrawer.tsx` ; chaque action est tracée dans la table `convention_historique` pour garder un historique.
