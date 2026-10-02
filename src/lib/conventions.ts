@@ -68,26 +68,55 @@ export function ajouterMois(dateIso: string, mois: number): string {
   return calculerEcheance(dateIso, mois);
 }
 
-/** Bip discret via Web Audio (aucun fichier son requis). */
-export function jouerSignalAlerte() {
+/** 
+ * Joue un carillon Web Audio sans fichier externe.
+ * niveau: 'alerte' (doux, ascendant) ou 'urgence' (triple note plus marquée)
+ */
+export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
   try {
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
-    [0, 0.25].forEach((t) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "sine";
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
-      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.18);
-      o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + t);
-      o.stop(ctx.currentTime + t + 0.2);
-    });
-    setTimeout(() => ctx.close(), 800);
+
+    if (niveau === "alerte") {
+      const notes = [
+        { f: 659.25, start: 0, dur: 0.18 },
+        { f: 880.0, start: 0.2, dur: 0.35 },
+      ];
+      notes.forEach(({ f, start, dur }) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + start);
+        o.stop(ctx.currentTime + start + dur);
+      });
+      setTimeout(() => ctx.close(), 800);
+    } else {
+      const notes = [
+        { f: 880, start: 0, dur: 0.12 },
+        { f: 880, start: 0.16, dur: 0.12 },
+        { f: 1046.5, start: 0.32, dur: 0.25 },
+      ];
+      notes.forEach(({ f, start, dur }) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "triangle";
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+        g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + start);
+        o.stop(ctx.currentTime + start + dur);
+      });
+      setTimeout(() => ctx.close(), 1000);
+    }
   } catch {
-    /* navigateur sans audio : on ignore */
+    /* Navigateur silencieux */
   }
 }
 
@@ -108,6 +137,11 @@ export function joursRestants(dateEcheance: string): number {
   today.setHours(0, 0, 0, 0);
   const end = new Date(dateEcheance + "T00:00:00");
   return Math.round((end.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function dateLimitePreavis(dateEcheance: string, preavisMois: number): string {
+  if (!dateEcheance) return "";
+  return ajouterMois(dateEcheance, -preavisMois);
 }
 
 export function calculerStatut(dateEcheance: string): Statut {

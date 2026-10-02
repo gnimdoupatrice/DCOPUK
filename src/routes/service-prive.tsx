@@ -3,15 +3,24 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
   Bell,
+  BellOff,
+  Download,
+  Eye,
   FileSignature,
   FileText,
   Layers,
   Lock,
   LogOut,
+  Pencil,
   Plus,
   Search,
+  Trash2,
+  Volume2,
   X,
 } from "lucide-react";
 import ukEmblem from "@/assets/uk-emblem.png";
@@ -21,9 +30,12 @@ import {
   CADRES_PAR_POLE,
   DEFAULT_POLES,
   SEUIL_ALERTE_JOURS,
+  SEUIL_URGENCE_JOURS,
   STATUT_INFO,
+  ajouterMois,
   calculerEcheance,
   calculerStatut,
+  dateLimitePreavis,
   formatDate,
   jouerSignalAlerte,
   joursRestants,
@@ -159,6 +171,30 @@ function Espace({ email }: { email: string }) {
   const [fPole, setFPole] = useState("");
   const [fStatut, setFStatut] = useState<"" | Statut>("");
 
+  // Tri interactif des colonnes
+  type SortField = "partenaire_nom" | "pole" | "date_signature" | "date_echeance" | "jours" | "statut";
+  const [sortKey, setSortKey] = useState<SortField>("jours");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  // Préférence sonore (activé/coupé)
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("dcop_sound") !== "off");
+
+  function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    localStorage.setItem("dcop_sound", next ? "on" : "off");
+    if (next) jouerSignalAlerte("alerte");
+  }
+
+  function handleSort(key: SortField) {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  }
+
   async function load() {
     setLoading(true);
     const [c, p] = await Promise.all([
@@ -172,10 +208,13 @@ function Espace({ email }: { email: string }) {
       setConventions(list);
       if (!alertChecked.current) {
         alertChecked.current = true;
-        const n = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= 0 && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS).length;
-        if (n > 0) {
-          setAlertNotice(n);
-          jouerSignalAlerte();
+        const alertes = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= 0 && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS);
+        if (alertes.length > 0) {
+          setAlertNotice(alertes.length);
+          if (soundEnabled) {
+            const hasUrgence = alertes.some((x) => joursRestants(x.date_echeance) < SEUIL_URGENCE_JOURS);
+            jouerSignalAlerte(hasUrgence ? "urgence" : "alerte");
+          }
           setTimeout(() => setAlertNotice(null), 10000);
         }
       }
@@ -193,11 +232,48 @@ function Espace({ email }: { email: string }) {
   const actives = useMemo(() => conventions.filter((c) => !c.archived), [conventions]);
   const selected = conventions.find((c) => c.id === selectedId) ?? null;
 
+  async function supprimerDirect(id: string, nom: string, pdfPath?: string | null) {
+    if (!window.confirm(`Supprimer définitivement la convention avec « ${nom} » ?`)) return;
+    try {
+      if (pdfPath) {
+        await supabase.storage.from("conventions-pdf").remove([pdfPath]);
+      }
+      const { error } = await supabase.from("conventions").delete().eq("id", id);
+      if (error) {
+        alert("Erreur lors de la suppression : " + error.message);
+      } else {
+        if (selectedId === id) setSelectedId(null);
+        await load();
+      }
+    } catch {
+      alert("Erreur inattendue lors de la suppression.");
+    }
+  }
+
+  async function ouvrirPdfDirect(path: string) {
+    const { data, error } = await supabase.storage.from("conventions-pdf").createSignedUrl(path, 600);
+    if (error || !data) {
+      alert("Impossible d'ouvrir le document PDF.");
+    } else {
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return conventions
+    const list = conventions
       .filter((c) => (showArchived ? c.archived : !c.archived))
-      .map((c) => ({ ...c, statut: calculerStatut(c.date_echeance), jours: joursRestants(c.date_echeance) }))
+      .map((c) => {
+        const limPreavis = dateLimitePreavis(c.date_echeance, c.preavis_mois);
+        const jPreavis = limPreavis ? joursRestants(limPreavis) : 999;
+        return {
+          ...c,
+          statut: calculerStatut(c.date_echeance),
+          jours: joursRestants(c.date_echeance),
+          date_limite_preavis: limPreavis,
+          jours_avant_preavis: jPreavis,
+        };
+      })
       .filter((c) => !fPole || c.pole === fPole)
       .filter((c) => !fStatut || c.statut === fStatut)
       .filter(
@@ -207,14 +283,18 @@ function Espace({ email }: { email: string }) {
             .join(" ")
             .toLowerCase()
             .includes(term),
-      )
-      .sort((a, b) => {
-        // Les expirés en fin de liste, sinon échéance la plus proche d'abord
-        const ea = a.jours < 0 ? 1 : 0;
-        const eb = b.jours < 0 ? 1 : 0;
-        return ea - eb || a.jours - b.jours;
-      });
-  }, [conventions, q, fPole, fStatut, showArchived]);
+      );
+
+    return list.sort((a, b) => {
+      let va = a[sortKey];
+      let vb = b[sortKey];
+      if (typeof va === "string") va = (va as string).toLowerCase();
+      if (typeof vb === "string") vb = (vb as string).toLowerCase();
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [conventions, q, fPole, fStatut, showArchived, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
     const s = actives.map((c) => calculerStatut(c.date_echeance));
@@ -227,6 +307,63 @@ function Espace({ email }: { email: string }) {
       parPole,
     };
   }, [actives, poles]);
+
+  function exporterCsv() {
+    if (rows.length === 0) {
+      alert("Aucune convention à exporter.");
+      return;
+    }
+    const headers = [
+      "Partenaire",
+      "Pôle",
+      "Cadre juridique",
+      "Thématique",
+      "Pays",
+      "Ville",
+      "Date signature",
+      "Durée (mois)",
+      "Date échéance",
+      "Jours restants",
+      "Statut",
+      "Préavis (mois)",
+      "Reconduction",
+      "Archivée",
+    ];
+
+    const escapeCsv = (str: string | number | null | undefined) => {
+      const val = str === null || str === undefined ? "" : String(str);
+      return `"${val.replace(/"/g, '""')}"`;
+    };
+
+    const lines = rows.map((c) =>
+      [
+        escapeCsv(c.partenaire_nom),
+        escapeCsv(c.pole),
+        escapeCsv(c.cadre_juridique),
+        escapeCsv(c.thematique || ""),
+        escapeCsv(c.partenaire_pays),
+        escapeCsv(c.partenaire_ville || ""),
+        escapeCsv(formatDate(c.date_signature)),
+        escapeCsv(c.duree_mois),
+        escapeCsv(formatDate(c.date_echeance)),
+        escapeCsv(c.jours),
+        escapeCsv(STATUT_INFO[c.statut].label),
+        escapeCsv(c.preavis_mois),
+        escapeCsv(c.reconduction),
+        escapeCsv(c.archived ? "Oui" : "Non"),
+      ].join(";")
+    );
+
+    // BOM UTF-8 pour préserver les accents dans Excel
+    const csvContent = "\uFEFF" + [headers.join(";"), ...lines].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `conventions_dcop_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="min-h-screen bg-muted font-body">
@@ -285,11 +422,35 @@ function Espace({ email }: { email: string }) {
             <h2 className="text-lg font-bold text-uk-blue">
               {showArchived ? "Conventions clôturées / archivées" : "Registre des conventions"}
             </h2>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSound}
+                title={soundEnabled ? "Sons actifs (cliquer pour couper)" : "Sons coupés (cliquer pour réactiver)"}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                  soundEnabled
+                    ? "border-uk-blue/30 bg-uk-blue/10 text-uk-blue"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                {soundEnabled ? <Volume2 className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                <span className="hidden sm:inline">{soundEnabled ? "Son actif" : "Silencieux"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={exporterCsv}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                <Download className="h-4 w-4 text-uk-blue" />
+                <span>Export CSV / Excel</span>
+              </button>
+
               <label className="inline-flex items-center gap-2 text-sm text-foreground">
                 <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-                Voir les archives
+                Archives
               </label>
+
               <button
                 onClick={() => {
                   setEditing(null);
@@ -336,14 +497,42 @@ function Espace({ email }: { email: string }) {
 
           <p className="mt-3 text-xs text-muted-foreground">Cliquez sur une ligne pour ouvrir la fiche détaillée.</p>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1100px] text-left text-sm">
               <thead className="bg-uk-blue text-primary-foreground">
                 <tr>
-                  {["Statut", "Partenaire", "Pôle / Cadre", "Thématique", "Signature", "Échéance", "Jours restants", "Préavis"].map((h) => (
-                    <th key={h} className="px-3 py-2.5 font-semibold">
-                      {h}
-                    </th>
-                  ))}
+                  <th onClick={() => handleSort("statut")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Statut {sortKey === "statut" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th onClick={() => handleSort("partenaire_nom")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Partenaire {sortKey === "partenaire_nom" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th onClick={() => handleSort("pole")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Pôle / Cadre {sortKey === "pole" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th className="px-3 py-2.5 font-semibold">Thématique</th>
+                  <th onClick={() => handleSort("date_signature")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Signature {sortKey === "date_signature" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th onClick={() => handleSort("date_echeance")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Échéance {sortKey === "date_echeance" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th onClick={() => handleSort("jours")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
+                    <span className="inline-flex items-center gap-1">
+                      Jours restants {sortKey === "jours" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
+                    </span>
+                  </th>
+                  <th className="px-3 py-2.5 font-semibold">Préavis & Alerte</th>
+                  <th className="px-3 py-2.5 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -391,9 +580,59 @@ function Espace({ email }: { email: string }) {
                       <td className="px-3 py-3 whitespace-nowrap">{formatDate(c.date_echeance)}</td>
                       <td className="px-3 py-3 font-semibold">{c.jours < 0 ? "Échue" : `J-${c.jours}`}</td>
                       <td className="px-3 py-3 text-xs">
-                        {c.preavis_mois} mois
-                        <br />
-                        <span className="text-muted-foreground">Reconduction {c.reconduction.toLowerCase()}</span>
+                        <p className="font-medium text-foreground">{c.preavis_mois} mois</p>
+                        <p className="text-muted-foreground">Reconduction {c.reconduction.toLowerCase()}</p>
+                        {c.jours_avant_preavis <= 60 && c.jours_avant_preavis >= 0 && (
+                          <span className="mt-1 inline-block rounded bg-uk-orange/15 px-1.5 py-0.5 font-bold text-uk-orange">
+                            Préavis dans {c.jours_avant_preavis}j !
+                          </span>
+                        )}
+                        {c.jours_avant_preavis < 0 && c.jours > 0 && (
+                          <span className="mt-1 inline-block rounded bg-destructive/15 px-1.5 py-0.5 font-bold text-destructive">
+                            Délai préavis dépassé
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(c.id)}
+                            title="Fiche détaillée et avenant"
+                            className="inline-flex items-center gap-1 rounded bg-uk-blue/10 px-2 py-1 text-xs font-semibold text-uk-blue hover:bg-uk-blue hover:text-white"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> Détails
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditing(c);
+                              setShowForm(true);
+                            }}
+                            title="Modifier les données ou joindre un PDF"
+                            className="inline-flex items-center gap-1 rounded bg-uk-gold/20 px-2 py-1 text-xs font-semibold text-uk-navy hover:bg-uk-gold"
+                          >
+                            <Pencil className="h-3.5 w-3.5" /> Modifier
+                          </button>
+                          {c.pdf_path && (
+                            <button
+                              type="button"
+                              onClick={() => ouvrirPdfDirect(c.pdf_path!)}
+                              title="Ouvrir le document PDF"
+                              className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs font-semibold text-foreground hover:bg-border"
+                            >
+                              <FileText className="h-3.5 w-3.5 text-uk-blue" /> PDF
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => supprimerDirect(c.id, c.partenaire_nom, c.pdf_path)}
+                            title="Supprimer la convention"
+                            className="inline-flex items-center gap-1 rounded bg-destructive/10 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-white"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

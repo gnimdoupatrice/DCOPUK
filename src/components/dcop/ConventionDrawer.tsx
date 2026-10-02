@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Archive, FilePlus2, FileText, History, Pencil, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { Archive, FilePlus2, FileText, History, Pencil, Printer, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   PDF_BUCKET,
@@ -176,9 +176,19 @@ export function ConventionDrawer({
             <h3 className="text-lg font-bold">{c.partenaire_nom}</h3>
             <p className="text-sm opacity-90">{c.cadre_juridique}</p>
           </div>
-          <button onClick={onClose} aria-label="Fermer" className="opacity-80 hover:opacity-100">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              title="Imprimer la fiche officielle"
+              className="rounded-md border border-white/20 p-1.5 hover:bg-white/10"
+            >
+              <Printer className="h-4 w-4" />
+            </button>
+            <button onClick={onClose} aria-label="Fermer" className="opacity-80 hover:opacity-100">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-6 px-6 py-6">
