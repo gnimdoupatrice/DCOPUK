@@ -116,7 +116,7 @@ export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
       setTimeout(() => ctx.close(), 1000);
     }
   } catch {
-    /* Navigateur  navga  silencieux */
+    /* Navigateur  silencieux */
   }
 }
 
