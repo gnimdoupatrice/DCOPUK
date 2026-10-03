@@ -1,0 +1,18 @@
+{
+  "name": "DCOP — Université de Kara",
+  "short_name": "DCOP",
+  "description": "Portail de la Direction de la Coopération et des Partenariats de l'Université de Kara.",
+  "id": "/",
+  "start_url": "/service-prive",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "fr",
+  "theme_color": "#223EA4",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

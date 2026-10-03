@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { CriticalAlarm } from "@/components/dcop/CriticalAlarm";
+import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
@@ -208,13 +210,10 @@ function Espace({ email }: { email: string }) {
       setConventions(list);
       if (!alertChecked.current) {
         alertChecked.current = true;
-        const alertes = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= 0 && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS);
+        // Rappel discret (orange) pour la zone J-150 hors zone rouge ; l'alarme critique est gérée par CriticalAlarm
+        const alertes = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= SEUIL_URGENCE_JOURS && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS);
         if (alertes.length > 0) {
           setAlertNotice(alertes.length);
-          if (soundEnabled) {
-            const hasUrgence = alertes.some((x) => joursRestants(x.date_echeance) < SEUIL_URGENCE_JOURS);
-            jouerSignalAlerte(hasUrgence ? "urgence" : "alerte");
-          }
           setTimeout(() => setAlertNotice(null), 10000);
         }
       }
@@ -227,6 +226,12 @@ function Espace({ email }: { email: string }) {
 
   useEffect(() => {
     load();
+    // Rafraîchissement silencieux du registre toutes les 60 s
+    const id = window.setInterval(async () => {
+      const { data, error } = await supabase.from("conventions").select("*");
+      if (!error && data) setConventions(data as Convention[]);
+    }, 60_000);
+    return () => window.clearInterval(id);
   }, []);
 
   const actives = useMemo(() => conventions.filter((c) => !c.archived), [conventions]);
@@ -695,6 +700,8 @@ function Espace({ email }: { email: string }) {
           </button>
         </div>
       )}
+      <CriticalAlarm conventions={conventions} />
+      <InstallPwa />
     </div>
   );
 }
