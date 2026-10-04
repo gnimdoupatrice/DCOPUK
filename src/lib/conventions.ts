@@ -50,6 +50,7 @@ export interface Convention {
   archived_at?: string | null;
   archive_note?: string | null;
   pdf_path?: string | null;
+  seuil_alerte_jours?: number | null;
 }
 
 export interface HistoriqueEntry {
@@ -161,4 +162,26 @@ export const STATUT_INFO: Record<Statut, { label: string; className: string }> =
 
 export function formatDate(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR");
+}
+/** Seuil d'alerte effectif : personnalisé si défini, sinon règle générale J-150. */
+export function seuilDe(c: Pick<Convention, "seuil_alerte_jours">): number {
+  return c.seuil_alerte_jours != null && c.seuil_alerte_jours >= 0 ? c.seuil_alerte_jours : SEUIL_ALERTE_JOURS;
+}
+
+/** Préavis contractuel atteint (date limite de préavis passée ou aujourd'hui). */
+export function preavisAtteint(c: Pick<Convention, "date_echeance" | "preavis_mois">): boolean {
+  const p = dateLimitePreavis(c.date_echeance, c.preavis_mois);
+  return !!p && joursRestants(p) <= 0;
+}
+
+export type FiltreCockpit = "" | "actives" | "alerte" | "urgence" | "expire";
+
+export function correspondCockpit(c: Convention, f: FiltreCockpit): boolean {
+  if (!f) return true;
+  const j = joursRestants(c.date_echeance);
+  if (f === "expire") return j < 0;
+  if (j < 0) return false;
+  if (f === "actives") return true;
+  if (f === "alerte") return j <= seuilDe(c);
+  return j < SEUIL_URGENCE_JOURS || preavisAtteint(c);
 }
