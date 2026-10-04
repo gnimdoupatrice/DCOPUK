@@ -43,6 +43,8 @@ import {
   joursRestants,
   type Convention,
   type Statut,
+  correspondCockpit,
+  type FiltreCockpit,
 } from "@/lib/conventions";
 
 export const Route = createFileRoute("/service-prive")({
@@ -170,6 +172,14 @@ function Espace({ email }: { email: string }) {
   const [q, setQ] = useState("");
   const [fPole, setFPole] = useState("");
   const [fStatut, setFStatut] = useState<"" | Statut>("");
+  const [fCockpit, setFCockpit] = useState<FiltreCockpit>("");
+  const registreRef = useRef<HTMLElement | null>(null);
+  function filtrerCockpit(f: FiltreCockpit) {
+    setFCockpit(f);
+    setFStatut("");
+    if (f) setShowArchived(false);
+    registreRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // Tri interactif des colonnes
   type SortField = "partenaire_nom" | "pole" | "date_signature" | "date_echeance" | "jours" | "statut";
@@ -270,6 +280,7 @@ function Espace({ email }: { email: string }) {
       })
       .filter((c) => !fPole || c.pole === fPole)
       .filter((c) => !fStatut || c.statut === fStatut)
+      .filter((c) => correspondCockpit(c, fCockpit))
       .filter(
         (c) =>
           !term ||
@@ -288,16 +299,17 @@ function Espace({ email }: { email: string }) {
       if (va > vb) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [conventions, q, fPole, fStatut, showArchived, sortKey, sortAsc]);
+  }, [conventions, q, fPole, fStatut, fCockpit, showArchived, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
-    const s = actives.map((c) => calculerStatut(c.date_echeance));
     const parPole = poles.map((p) => ({ pole: p, n: actives.filter((c) => c.pole === p).length }));
+    const n = (f: FiltreCockpit) => actives.filter((c) => correspondCockpit(c, f)).length;
     return {
       total: actives.length,
-      alerte: s.filter((x) => x === "alerte" || x === "urgence").length,
-      urgence: s.filter((x) => x === "urgence").length,
-      expire: s.filter((x) => x === "expire").length,
+      enCours: n("actives"),
+      alerte: n("alerte"),
+      urgence: n("urgence"),
+      expire: n("expire"),
       parPole,
     };
   }, [actives, poles]);
@@ -391,11 +403,12 @@ function Espace({ email }: { email: string }) {
         {/* Cockpit */}
         <section>
           <h2 className="mb-4 text-lg font-bold text-uk-blue">Cockpit de synthèse</h2>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" />
-            <Kpi icon={AlertTriangle} label="En alerte (≤ 5 mois)" value={stats.alerte} tone="text-uk-orange" />
-            <Kpi icon={AlertTriangle} label="Urgence (< 2 mois)" value={stats.urgence} tone="text-destructive" />
-            <Kpi icon={Layers} label="Expirés" value={stats.expire} tone="text-muted-foreground" />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
+            <Kpi icon={FileSignature} label="Conventions actives" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
+            <Kpi icon={AlertTriangle} label="En alerte (≤ 5 mois)" value={stats.alerte} tone="text-uk-orange" active={fCockpit === "alerte"} onClick={() => filtrerCockpit("alerte")} />
+            <Kpi icon={AlertTriangle} label="Urgences (< 60 j)" value={stats.urgence} tone="text-destructive" active={fCockpit === "urgence"} onClick={() => filtrerCockpit("urgence")} />
+            <Kpi icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
           </div>
           <div className="mt-4 rounded-xl bg-card p-5 shadow-sm">
             <p className="mb-3 text-sm font-semibold text-foreground">Répartition par pôle</p>
@@ -411,7 +424,7 @@ function Espace({ email }: { email: string }) {
         </section>
 
         {/* Registre */}
-        <section className="rounded-xl bg-card p-5 shadow-sm">
+        <section ref={registreRef} className="scroll-mt-4 rounded-xl bg-card p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-uk-blue">
               {showArchived ? "Conventions clôturées / archivées" : "Registre des conventions"}
@@ -486,6 +499,20 @@ function Espace({ email }: { email: string }) {
               ))}
             </select>
           </div>
+
+          {fCockpit && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-uk-blue/30 bg-uk-blue/10 px-3 py-2 text-sm text-uk-blue">
+              <span>
+                Filtre du cockpit :{" "}
+                <strong>
+                  {{ actives: "Conventions actives", alerte: "En alerte (≤ 5 mois)", urgence: "Urgences (< 60 j ou préavis atteint)", expire: "Expirées" }[fCockpit]}
+                </strong>
+              </span>
+              <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
+                Réinitialiser le filtre
+              </button>
+            </div>
+          )}
 
           {loadError && <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{loadError}</p>}
 
@@ -673,18 +700,29 @@ function Kpi({
   label,
   value,
   tone,
+  active,
+  onClick,
 }: {
   icon: typeof Layers;
   label: string;
   value: number;
   tone: string;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-xl bg-card p-5 shadow-sm">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-xl bg-card p-5 text-left shadow-sm ring-2 transition hover:-translate-y-0.5 hover:shadow-md ${
+        active ? "ring-uk-blue" : "ring-transparent"
+      }`}
+    >
       <Icon className={`h-5 w-5 ${tone}`} />
       <p className={`mt-3 text-3xl font-extrabold ${tone}`}>{value}</p>
       <p className="mt-1 text-sm text-muted-foreground">{label}</p>
-    </div>
+    </button>
   );
 }
 
@@ -715,6 +753,7 @@ function ConventionForm({
   const [duree, setDuree] = useState(initial?.duree_mois ?? 60);
   const [preavis, setPreavis] = useState(initial?.preavis_mois ?? 3);
   const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Expresse");
+  const [seuilPerso, setSeuilPerso] = useState<string>(initial?.seuil_alerte_jours != null ? String(initial.seuil_alerte_jours) : "");
   const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -752,6 +791,7 @@ function ConventionForm({
       date_echeance: echeance,
       preavis_mois: preavis,
       reconduction,
+      seuil_alerte_jours: seuilPerso.trim() === "" ? null : Math.max(0, Number(seuilPerso)),
     };
     const res = initial
       ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
@@ -848,6 +888,9 @@ function ConventionForm({
                   <option>Tacite</option>
                   <option>Non reconductible</option>
                 </select>
+              </Field>
+              <Field label="Seuil d'alerte personnalisé (jours avant échéance)" className="sm:col-span-3">
+                <input type="number" min={0} value={seuilPerso} placeholder={`Vide = règle générale J-${SEUIL_ALERTE_JOURS}`} onChange={(e) => setSeuilPerso(e.target.value)} className={inputCls} />
               </Field>
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />

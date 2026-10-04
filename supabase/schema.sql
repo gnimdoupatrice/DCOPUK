@@ -88,3 +88,6 @@ create policy "Personnel DCOP - envoi PDF" on storage.objects
 drop policy if exists "Personnel DCOP - suppression PDF" on storage.objects;
 create policy "Personnel DCOP - suppression PDF" on storage.objects
   for delete to authenticated using (bucket_id = 'conventions-pdf');
+
+-- Seuil d'alerte personnalisé par convention (jours avant échéance). NULL = règle générale J-150.
+alter table public.conventions add column if not exists seuil_alerte_jours integer check (seuil_alerte_jours is null or seuil_alerte_jours >= 0);
