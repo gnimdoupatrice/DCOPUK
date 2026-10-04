@@ -167,8 +167,6 @@ function Espace({ email }: { email: string }) {
   const [editing, setEditing] = useState<Convention | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [alertNotice, setAlertNotice] = useState<number | null>(null);
-  const alertChecked = useRef(false);
   const [q, setQ] = useState("");
   const [fPole, setFPole] = useState("");
   const [fStatut, setFStatut] = useState<"" | Statut>("");
@@ -208,15 +206,6 @@ function Espace({ email }: { email: string }) {
       setLoadError(null);
       const list = (c.data ?? []) as Convention[];
       setConventions(list);
-      if (!alertChecked.current) {
-        alertChecked.current = true;
-        // Rappel discret (orange) pour la zone J-150 hors zone rouge ; l'alarme critique est gérée par CriticalAlarm
-        const alertes = list.filter((x) => !x.archived && joursRestants(x.date_echeance) >= SEUIL_URGENCE_JOURS && joursRestants(x.date_echeance) <= SEUIL_ALERTE_JOURS);
-        if (alertes.length > 0) {
-          setAlertNotice(alertes.length);
-          setTimeout(() => setAlertNotice(null), 10000);
-        }
-      }
     }
     if (!p.error && p.data?.length) {
       setPoles(Array.from(new Set([...DEFAULT_POLES, ...p.data.map((r) => r.nom as string)])));
@@ -673,33 +662,6 @@ function Espace({ email }: { email: string }) {
         />
       )}
 
-      {alertNotice !== null && (
-        <div
-          role="status"
-          className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border-l-4 border-uk-orange bg-card p-4 shadow-xl"
-        >
-          <Bell className="mt-0.5 h-5 w-5 shrink-0 text-uk-orange" />
-          <div className="text-sm">
-            <p className="font-semibold text-foreground">Veille des échéances</p>
-            <p className="text-muted-foreground">
-              {alertNotice} convention{alertNotice > 1 ? "s arrivent" : " arrive"} à échéance dans moins de 5 mois.
-            </p>
-            <button
-              onClick={() => {
-                setFStatut("");
-                setShowArchived(false);
-                setAlertNotice(null);
-              }}
-              className="mt-1 text-xs font-semibold text-uk-blue hover:underline"
-            >
-              Voir le registre
-            </button>
-          </div>
-          <button onClick={() => setAlertNotice(null)} aria-label="Fermer" className="text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
       <CriticalAlarm conventions={conventions} />
       <InstallPwa />
     </div>
