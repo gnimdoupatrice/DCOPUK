@@ -51,6 +51,9 @@ export interface Convention {
   archive_note?: string | null;
   pdf_path?: string | null;
   seuil_alerte_jours?: number | null;
+  heure_alerte?: string | null;
+  alarme_arretee_le?: string | null;
+  alarme_reportee_jusqu_a?: string | null;
 }
 
 export interface HistoriqueEntry {
@@ -71,11 +74,12 @@ export function ajouterMois(dateIso: string, mois: number): string {
 
 /** 
  * Joue un carillon Web Audio sans fichier externe.
- * niveau: 'alerte' (doux, ascendant) ou 'urgence' (triple note plus marquée)
  */
 export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
   try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
 
     if (niveau === "alerte") {
@@ -117,7 +121,7 @@ export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
       setTimeout(() => ctx.close(), 1000);
     }
   } catch {
-    /* Navigateur  navga  silencieux */
+    /* Navigateur silencieux */
   }
 }
 
@@ -136,13 +140,9 @@ export function calculerEcheance(dateSignature: string, dureeMois: number): stri
 export function joursRestants(dateEcheance: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const end = new Date(dateEcheance + "T00:00:00");
-  return Math.round((end.getTime() - today.getTime()) / 86_400_000);
-}
-
-export function dateLimitePreavis(dateEcheance: string, preavisMois: number): string {
-  if (!dateEcheance) return "";
-  return ajouterMois(dateEcheance, -preavisMois);
+  const target = new Date(dateEcheance + "T00:00:00");
+  const diff = target.getTime() - today.getTime();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
 export function calculerStatut(dateEcheance: string): Statut {
@@ -153,35 +153,92 @@ export function calculerStatut(dateEcheance: string): Statut {
   return "actif";
 }
 
-export const STATUT_INFO: Record<Statut, { label: string; className: string }> = {
-  actif: { label: "Actif", className: "bg-uk-green text-white" },
-  alerte: { label: "Alerte 5 mois", className: "bg-uk-orange text-white" },
-  urgence: { label: "Urgence < 2 mois", className: "bg-destructive text-destructive-foreground" },
-  expire: { label: "Expiré", className: "bg-muted-foreground text-white" },
-};
-
-export function formatDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR");
-}
 /** Seuil d'alerte effectif : personnalisé si défini, sinon règle générale J-150. */
 export function seuilDe(c: Pick<Convention, "seuil_alerte_jours">): number {
-  return c.seuil_alerte_jours != null && c.seuil_alerte_jours >= 0 ? c.seuil_alerte_jours : SEUIL_ALERTE_JOURS;
+  return c.seuil_alerte_jours != null && c.seuil_alerte_jours >= 0
+    ? c.seuil_alerte_jours
+    : SEUIL_ALERTE_JOURS;
 }
 
-/** Préavis contractuel atteint (date limite de préavis passée ou aujourd'hui). */
+/** Calcule le moment exact (Date) du premier déclenchement de l'alarme pour une convention. */
+export function momentAlerteConvention(c: Convention): Date {
+  const seuilJours = seuilDe(c);
+  const echeance = new Date(c.date_echeance + "T00:00:00");
+  // Date du jour J d'alerte
+  const dateDeclenchement = new Date(echeance.getTime() - seuilJours * 24 * 60 * 60 * 1000);
+  
+  // Heure précise (défaut : 00:00)
+  const heureStr = (c.heure_alerte && c.heure_alerte.trim()) ? c.heure_alerte.trim() : "00:00";
+  const [h, m] = heureStr.split(":").map((v) => parseInt(v, 10) || 0);
+  dateDeclenchement.setHours(h, m, 0, 0);
+  return dateDeclenchement;
+}
+
+/** Calcule le moment de la deuxième sonnerie (+8h après la première). */
+export function momentRappel8h(c: Convention): Date {
+  const premiere = momentAlerteConvention(c);
+  return new Date(premiere.getTime() + 8 * 60 * 60 * 1000);
+}
+
+export function dateLimitePreavis(dateEcheance: string, preavisMois: number): string | null {
+  if (!preavisMois || preavisMois <= 0) return null;
+  const d = new Date(dateEcheance + "T00:00:00");
+  d.setMonth(d.getMonth() - preavisMois);
+  return d.toISOString().slice(0, 10);
+}
+
 export function preavisAtteint(c: Pick<Convention, "date_echeance" | "preavis_mois">): boolean {
-  const p = dateLimitePreavis(c.date_echeance, c.preavis_mois);
-  return !!p && joursRestants(p) <= 0;
+  const lim = dateLimitePreavis(c.date_echeance, c.preavis_mois);
+  if (!lim) return false;
+  return new Date() >= new Date(lim + "T00:00:00");
 }
 
-export type FiltreCockpit = "" | "actives" | "alerte" | "urgence" | "expire";
-
-export function correspondCockpit(c: Convention, f: FiltreCockpit): boolean {
-  if (!f) return true;
+export function filtrerParFiltre(
+  c: Convention,
+  f: "total" | "actif" | "alerte" | "urgence" | "expire",
+): boolean {
+  if (c.archived) return false;
   const j = joursRestants(c.date_echeance);
+  if (f === "total") return true;
   if (f === "expire") return j < 0;
   if (j < 0) return false;
-  if (f === "actives") return true;
+  if (f === "actif") return j > seuilDe(c) && !preavisAtteint(c);
   if (f === "alerte") return j <= seuilDe(c);
   return j < SEUIL_URGENCE_JOURS || preavisAtteint(c);
 }
+
+export function formatDate(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export const STATUT_INFO: Record<
+  Statut,
+  { label: string; badgeCls: string; dotCls: string; description: string }
+> = {
+  actif: {
+    label: "Actif",
+    badgeCls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+    dotCls: "bg-emerald-500",
+    description: "Convention en cours, au-delà du seuil d'alerte.",
+  },
+  alerte: {
+    label: "Alerte (< 5 mois)",
+    badgeCls: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+    dotCls: "bg-amber-500",
+    description: "Entrée dans la zone des 5 mois avant échéance.",
+  },
+  urgence: {
+    label: "Urgence critique (< 2 mois)",
+    badgeCls: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+    dotCls: "bg-rose-500",
+    description: "Échéance imminente ou préavis contractuel atteint.",
+  },
+  expire: {
+    label: "Expirée",
+    badgeCls: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
+    dotCls: "bg-zinc-400",
+    description: "Date d'échéance dépassée.",
+  },
+};

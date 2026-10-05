@@ -1,39 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BellRing } from "lucide-react";
+import { AlertTriangle, BellRing, Clock, XCircle, CheckCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import {
   type Convention,
-  SEUIL_URGENCE_JOURS,
-  dateLimitePreavis,
   formatDate,
   joursRestants,
-  preavisAtteint,
-  seuilDe,
+  momentAlerteConvention,
+  momentRappel8h,
 } from "@/lib/conventions";
 
-/** Fichier audio optionnel (public/alarme.mp3). Repli automatique : carillon Web Audio. */
 const AUDIO_PERSO = "/alarme.mp3";
-const ACK_KEY = "dcop_alarme_ack";
 
-/** Convention active, non expirée, ayant atteint son seuil (personnalisé ou J-150) ou son préavis. */
-export function estCritique(c: Convention): boolean {
-  if (c.archived) return false;
-  const j = joursRestants(c.date_echeance);
-  if (j < 0) return false;
-  return j <= seuilDe(c) || preavisAtteint(c);
-}
-
-class Sirene {
+class SireneLimitee {
   private ctx: AudioContext | null = null;
   private timer: number | null = null;
   private audio: HTMLAudioElement | null = null;
+  private cyclesCount = 0;
+  private maxCycles = 3;
 
-  async start() {
+  async start(onFinished?: () => void) {
     if (this.timer || this.audio) return;
+    this.cyclesCount = 0;
+
     try {
       const head = await fetch(AUDIO_PERSO, { method: "HEAD" });
       if (head.ok && (head.headers.get("content-type") ?? "").startsWith("audio")) {
         const a = new Audio(AUDIO_PERSO);
-        a.loop = true;
+        a.onended = () => {
+          this.cyclesCount++;
+          if (this.cyclesCount >= this.maxCycles) {
+            this.stop();
+            onFinished?.();
+          } else {
+            void a.play().catch(() => {});
+          }
+        };
         await a.play();
         this.audio = a;
         return;
@@ -41,18 +42,20 @@ class Sirene {
     } catch {
       /* repli synthèse audio */
     }
-    this.startSynth();
+    this.startSynth(onFinished);
   }
 
-  private startSynth() {
+  private startSynth(onFinished?: () => void) {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new Ctx();
+
     const bip = () => {
       const ctx = this.ctx;
       if (!ctx) return;
       if (ctx.state === "suspended") void ctx.resume();
+
       [0, 0.25, 0.5].forEach((t, i) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
@@ -66,12 +69,21 @@ class Sirene {
         o.start(s);
         o.stop(s + 0.22);
       });
+
+      this.cyclesCount++;
+      if (this.cyclesCount >= this.maxCycles) {
+        if (this.timer) {
+          window.clearInterval(this.timer);
+          this.timer = null;
+        }
+        onFinished?.();
+      }
     };
+
     bip();
     this.timer = window.setInterval(bip, 1400);
   }
 
-  /** Débloque l'audio si la lecture automatique initiale a été restreinte par le navigateur */
   resume() {
     if (this.ctx?.state === "suspended") void this.ctx.resume();
     if (this.audio?.paused) void this.audio.play().catch(() => {});
@@ -91,43 +103,94 @@ class Sirene {
   }
 }
 
-export function CriticalAlarm({ conventions }: { conventions: Convention[] }) {
+export function CriticalAlarm({
+  conventions,
+  onRefresh,
+}: {
+  conventions: Convention[];
+  onRefresh?: () => void;
+}) {
   const [tick, setTick] = useState(0);
-  const [ringing, setRinging] = useState(false);
-  const [open, setOpen] = useState(false);
-  const sirene = useRef<Sirene | null>(null);
+  const [activeConvention, setActiveConvention] = useState<Convention | null>(null);
+  const [isRinging, setIsRinging] = useState(false);
+  const [snoozeDateTime, setSnoozeDateTime] = useState("");
+  const [showSnoozeInput, setShowSnoozeInput] = useState(false);
+  const sirene = useRef<SireneLimitee | null>(null);
 
-  // Vérification périodique chaque minute
+  // Vérification chaque minute
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
     return () => window.clearInterval(id);
   }, []);
 
-  const critiques = useMemo(
-    () =>
-      conventions
-        .filter(estCritique)
-        .sort((a, b) => joursRestants(a.date_echeance) - joursRestants(b.date_echeance)),
+  // Détection de la convention dont l'alarme doit sonner maintenant
+  const conventionDeclenchee = useMemo(() => {
+    const now = new Date();
+
+    for (const c of conventions) {
+      if (c.archived) continue;
+      const j = joursRestants(c.date_echeance);
+      if (j < 0) continue; // expirée ignorée
+
+      // 1. Si déjà arrêtée définitivement par le Directeur -> aucune alarme
+      if (c.alarme_arretee_le) continue;
+
+      // 2. Si un report personnalisé est en cours
+      if (c.alarme_reportee_jusqu_a) {
+        const report = new Date(c.alarme_reportee_jusqu_a);
+        if (now >= report && now.getTime() - report.getTime() < 3600_000) {
+          return { convention: c, type: "report" as const };
+        }
+        continue;
+      }
+
+      // 3. Calcul de la première alarme (Date + Heure précise ou 00:00)
+      const premiereAlarme = momentAlerteConvention(c);
+      const diffPremiere = now.getTime() - premiereAlarme.getTime();
+
+      // Première alarme sonne si on a atteint l'heure et dans l'heure qui suit
+      if (diffPremiere >= 0 && diffPremiere < 3600_000) {
+        return { convention: c, type: "premiere" as const };
+      }
+
+      // 4. Deuxième alarme : 8 heures après la première
+      const deuxiemeAlarme = momentRappel8h(c);
+      const diffDeuxieme = now.getTime() - deuxiemeAlarme.getTime();
+      if (diffDeuxieme >= 0 && diffDeuxieme < 3600_000) {
+        return { convention: c, type: "deuxieme" as const };
+      }
+    }
+    return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conventions, tick],
-  );
+  }, [conventions, tick]);
 
-  const signature = critiques.map((c) => `${c.id}:${c.date_echeance}`).join("|");
-
-  // Déclenchement à la connexion si des conventions sont en alerte et non encore acquittées aujourd'hui
   useEffect(() => {
-    if (!signature || open) return;
-    const jour = new Date().toISOString().slice(0, 10);
-    if (sessionStorage.getItem(ACK_KEY) === `${jour}#${signature}`) return;
+    if (!conventionDeclenchee) {
+      setActiveConvention(null);
+      return;
+    }
 
-    if (!sirene.current) sirene.current = new Sirene();
-    void sirene.current.start();
-    setRinging(true);
-  }, [signature, open]);
+    const { convention } = conventionDeclenchee;
+    setActiveConvention(convention);
 
-  // Si l'autoplay audio est bloqué par le navigateur, la première interaction tactile/clavier le relance
+    // Initialise l'heure de report par défaut (+1 heure)
+    const defSnooze = new Date(Date.now() + 60 * 60 * 1000);
+    const localIso = new Date(defSnooze.getTime() - defSnooze.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setSnoozeDateTime(localIso);
+
+    // Déclenchement de la sonnerie (3 fois)
+    if (!sirene.current) sirene.current = new SireneLimitee();
+    setIsRinging(true);
+    void sirene.current.start(() => {
+      setIsRinging(false);
+    });
+  }, [conventionDeclenchee]);
+
+  // Déblocage audio si contrainte navigateur
   useEffect(() => {
-    if (!ringing) return;
+    if (!isRinging) return;
     const unlock = () => sirene.current?.resume();
     window.addEventListener("pointerdown", unlock);
     window.addEventListener("keydown", unlock);
@@ -135,104 +198,149 @@ export function CriticalAlarm({ conventions }: { conventions: Convention[] }) {
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
-  }, [ringing]);
+  }, [isRinging]);
 
   useEffect(() => () => sirene.current?.stop(), []);
 
-  function stopperEtOuvrir() {
+  function couperSon() {
     sirene.current?.stop();
-    setRinging(false);
-    setOpen(true);
+    setIsRinging(false);
   }
 
-  function prendreActe() {
-    const jour = new Date().toISOString().slice(0, 10);
-    sessionStorage.setItem(ACK_KEY, `${jour}#${signature}`);
-    setOpen(false);
+  // Arrêt définitif de l'alarme pour cette convention
+  async function arreterDefinitivement() {
+    if (!activeConvention) return;
+    couperSon();
+    const nowIso = new Date().toISOString();
+    await supabase
+      .from("conventions")
+      .update({
+        alarme_arretee_le: nowIso,
+        alarme_reportee_jusqu_a: null,
+      })
+      .eq("id", activeConvention.id);
+
+    await supabase.from("convention_historique").insert({
+      convention_id: activeConvention.id,
+      action: "Alarme arrêtée définitivement",
+      note: "Le Directeur a pris acte et a désactivé les sonneries de cette échéance.",
+    });
+
+    setActiveConvention(null);
+    onRefresh?.();
   }
 
-  if (!ringing && !open) return null;
-  const n = critiques.length;
+  // Report de l'alarme à une date et heure choisie
+  async function validerReport() {
+    if (!activeConvention || !snoozeDateTime) return;
+    couperSon();
+    const targetIso = new Date(snoozeDateTime).toISOString();
+    await supabase
+      .from("conventions")
+      .update({
+        alarme_reportee_jusqu_a: targetIso,
+      })
+      .eq("id", activeConvention.id);
+
+    await supabase.from("convention_historique").insert({
+      convention_id: activeConvention.id,
+      action: "Alarme reportée",
+      note: `Alarme reportée jusqu'au ${new Date(snoozeDateTime).toLocaleString("fr-FR")}`,
+    });
+
+    setActiveConvention(null);
+    setShowSnoozeInput(false);
+    onRefresh?.();
+  }
+
+  if (!activeConvention) return null;
+
+  const j = joursRestants(activeConvention.date_echeance);
+  const heureAffichee = activeConvention.heure_alerte || "00:00";
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[60] flex justify-center p-3">
-      <div
-        role="alertdialog"
-        aria-live="assertive"
-        className="w-full max-w-2xl overflow-hidden rounded-xl border-2 border-destructive bg-card shadow-2xl"
-      >
-        {!open ? (
-          <button
-            onClick={stopperEtOuvrir}
-            className="flex w-full animate-pulse items-center gap-3 bg-destructive px-4 py-3.5 text-left text-destructive-foreground transition-opacity hover:opacity-95"
-          >
-            <BellRing className="h-6 w-6 shrink-0" />
-            <span className="flex-1">
-              <span className="block font-bold">
-                ALERTE ÉCHÉANCES — {n} convention{n > 1 ? "s" : ""} prioritaire{n > 1 ? "s" : ""}
-              </span>
-              <span className="block text-xs opacity-90">
-                Cliquez pour couper la sonnerie et consulter le résumé.
-              </span>
-            </span>
-          </button>
-        ) : (
-          <div className="max-h-[82vh] overflow-y-auto">
-            <div className="flex items-center gap-2 bg-destructive px-4 py-3 text-destructive-foreground">
-              <AlertTriangle className="h-5 w-5" />
-              <p className="font-bold">Résumé de la situation des conventions</p>
+    <div className="fixed inset-x-0 top-0 z-[70] flex justify-center p-3 animate-in fade-in slide-in-from-top-4">
+      <div className="w-full max-w-xl overflow-hidden rounded-2xl border-2 border-destructive bg-card shadow-2xl">
+        <div className="flex items-center justify-between bg-destructive px-4 py-3 text-destructive-foreground">
+          <div className="flex items-center gap-2">
+            <BellRing className={`h-6 w-6 shrink-0 ${isRinging ? "animate-bounce" : ""}`} />
+            <div>
+              <p className="font-bold">ALERTE CONVENTION — HEURE PROGRAMMÉE</p>
+              <p className="text-xs opacity-90">Heure de consigne : {heureAffichee}</p>
             </div>
-            <div className="space-y-3 p-4 text-sm text-foreground">
-              <p>
-                {n} convention{n > 1 ? "s actives ont" : " active a"} atteint le seuil d'alerte,
-                la zone critique (&lt; {SEUIL_URGENCE_JOURS} jours) ou la date limite de préavis.
-                Une décision du Directeur est requise.
+          </div>
+          {isRinging && (
+            <button
+              onClick={couperSon}
+              className="rounded-lg bg-black/30 px-3 py-1 text-xs font-semibold hover:bg-black/50"
+            >
+              Couper la sonnerie
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-4 p-5 text-sm text-foreground">
+          <div className="rounded-xl border border-border bg-muted/60 p-4">
+            <p className="text-base font-bold text-uk-blue">{activeConvention.partenaire_nom}</p>
+            <p className="text-xs text-muted-foreground">
+              {activeConvention.pole} — {activeConvention.cadre_juridique}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded bg-rose-100 px-2 py-0.5 font-semibold text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+                Échéance : {formatDate(activeConvention.date_echeance)} (J - {j} jours)
+              </span>
+            </div>
+          </div>
+
+          {!showSnoozeInput ? (
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSnoozeInput(true)}
+                className="flex items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 py-2.5 font-medium text-foreground hover:bg-muted"
+              >
+                <Clock className="h-4 w-4 text-amber-600" />
+                Reporter l'alarme
+              </button>
+              <button
+                type="button"
+                onClick={arreterDefinitivement}
+                className="flex items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2.5 font-semibold text-destructive-foreground shadow hover:brightness-110"
+              >
+                <CheckCircle className="h-4 w-4" />
+                Arrêter définitivement
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <p className="font-semibold text-foreground">
+                Choisir la date et l'heure précise du prochain rappel :
               </p>
-              <ul className="space-y-2.5">
-                {critiques.map((c) => {
-                  const j = joursRestants(c.date_echeance);
-                  const preavis = dateLimitePreavis(c.date_echeance, c.preavis_mois);
-                  const pa = preavisAtteint(c);
-                  const rouge = j < SEUIL_URGENCE_JOURS || pa;
-                  return (
-                    <li key={c.id} className="rounded-lg border border-border bg-muted p-3">
-                      <p className="font-semibold text-uk-blue">
-                        {c.partenaire_nom}{" "}
-                        <span className="font-normal text-muted-foreground">
-                          ({c.partenaire_pays})
-                        </span>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Pôle : {c.pole} — Cadre : {c.cadre_juridique}
-                      </p>
-                      <p className="mt-1">
-                        Date limite : <strong>{formatDate(c.date_echeance)}</strong> —{" "}
-                        <strong className={rouge ? "text-destructive" : "text-amber-600"}>
-                          J - {j} jour{j > 1 ? "s" : ""}
-                        </strong>
-                        {preavis && <> — préavis au {formatDate(preavis)}</>}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Recommandation :{" "}
-                        {pa
-                          ? "Délai de préavis contractuel atteint ; notifier formellement le partenaire sans attendre."
-                          : `Engager la procédure de ${c.reconduction?.toLowerCase().includes("tacite") ? "confirmation ou dénonciation" : "renouvellement par avenant"} avant l'échéance.`}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="flex justify-end pt-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="datetime-local"
+                  value={snoozeDateTime}
+                  onChange={(e) => setSnoozeDateTime(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-uk-blue focus:outline-none"
+                />
                 <button
-                  onClick={prendreActe}
-                  className="rounded-lg bg-uk-blue px-5 py-2.5 font-semibold text-primary-foreground shadow hover:brightness-110"
+                  type="button"
+                  onClick={validerReport}
+                  className="rounded-lg bg-uk-blue px-4 py-2 text-xs font-semibold text-white shadow hover:brightness-110"
                 >
-                  J'ai pris acte
+                  Confirmer le report
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSnoozeInput(false)}
+                  className="rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-muted"
+                >
+                  Annuler
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

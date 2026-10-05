@@ -754,6 +754,7 @@ function ConventionForm({
   const [preavis, setPreavis] = useState(initial?.preavis_mois ?? 3);
   const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Expresse");
   const [seuilPerso, setSeuilPerso] = useState<string>(initial?.seuil_alerte_jours != null ? String(initial.seuil_alerte_jours) : "");
+  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte || "00:00");
   const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -792,6 +793,7 @@ function ConventionForm({
       preavis_mois: preavis,
       reconduction,
       seuil_alerte_jours: seuilPerso.trim() === "" ? null : Math.max(0, Number(seuilPerso)),
+      heure_alerte: heureAlerte.trim() || "00:00",
     };
     const res = initial
       ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
@@ -892,6 +894,15 @@ function ConventionForm({
               <Field label="Seuil d'alerte personnalisé (jours avant échéance)" className="sm:col-span-3">
                 <input type="number" min={0} value={seuilPerso} placeholder={`Vide = règle générale J-${SEUIL_ALERTE_JOURS}`} onChange={(e) => setSeuilPerso(e.target.value)} className={inputCls} />
               </Field>
+              <Field label="Heure précise de première sonnerie" className="sm:col-span-3">
+                <input type="time" value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
+                <span className="mt-1 block text-xs text-muted-foreground">Vide = 00:00 par défaut. Le 2e rappel sonnera à +8h.</span>
+              </Field>
+              {duree < 5 && (
+                <div className="sm:col-span-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  <strong>Convention de courte durée ({duree} mois) :</strong> La durée totale étant inférieure à 5 mois, personnalisez le seuil en jours et l'heure ci-dessus pour définir précisément le moment de votre alerte.
+                </div>
+              )}
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
               </Field>
