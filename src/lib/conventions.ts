@@ -67,14 +67,10 @@ export interface HistoriqueEntry {
 export const PDF_BUCKET = "conventions-pdf";
 export const PDF_MAX_OCTETS = 20 * 1024 * 1024;
 
-/** Ajoute des mois à une date ISO (yyyy-mm-dd). */
 export function ajouterMois(dateIso: string, mois: number): string {
   return calculerEcheance(dateIso, mois);
 }
 
-/** 
- * Joue un carillon Web Audio sans fichier externe.
- */
 export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
   try {
     const Ctx =
@@ -128,7 +124,7 @@ export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
 export type Statut = "actif" | "alerte" | "urgence" | "expire";
 
 export const SEUIL_ALERTE_JOURS = 150; // J-5 mois
-export const SEUIL_URGENCE_JOURS = 60; // < 2 mois
+export const SEUIL_URGENCE_JOURS = 60;  // < 2 mois
 
 export function calculerEcheance(dateSignature: string, dureeMois: number): string {
   if (!dateSignature || !dureeMois) return "";
@@ -137,108 +133,166 @@ export function calculerEcheance(dateSignature: string, dureeMois: number): stri
   return d.toISOString().slice(0, 10);
 }
 
-export function joursRestants(dateEcheance: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(dateEcheance + "T00:00:00");
-  const diff = target.getTime() - today.getTime();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-}
-
-export function calculerStatut(dateEcheance: string): Statut {
-  const j = joursRestants(dateEcheance);
-  if (j < 0) return "expire";
-  if (j < SEUIL_URGENCE_JOURS) return "urgence";
-  if (j <= SEUIL_ALERTE_JOURS) return "alerte";
-  return "actif";
-}
-
-/** Seuil d'alerte effectif : personnalisé si défini, sinon règle générale J-150. */
-export function seuilDe(c: Pick<Convention, "seuil_alerte_jours">): number {
-  return c.seuil_alerte_jours != null && c.seuil_alerte_jours >= 0
-    ? c.seuil_alerte_jours
-    : SEUIL_ALERTE_JOURS;
-}
-
-/** Calcule le moment exact (Date) du premier déclenchement de l'alarme pour une convention. */
-export function momentAlerteConvention(c: Convention): Date {
-  const seuilJours = seuilDe(c);
-  const echeance = new Date(c.date_echeance + "T00:00:00");
-  // Date du jour J d'alerte
-  const dateDeclenchement = new Date(echeance.getTime() - seuilJours * 24 * 60 * 60 * 1000);
-  
-  // Heure précise (défaut : 00:00)
-  const heureStr = (c.heure_alerte && c.heure_alerte.trim()) ? c.heure_alerte.trim() : "00:00";
-  const [h, m] = heureStr.split(":").map((v) => parseInt(v, 10) || 0);
-  dateDeclenchement.setHours(h, m, 0, 0);
-  return dateDeclenchement;
-}
-
-/** Calcule le moment de la deuxième sonnerie (+8h après la première). */
-export function momentRappel8h(c: Convention): Date {
-  const premiere = momentAlerteConvention(c);
-  return new Date(premiere.getTime() + 8 * 60 * 60 * 1000);
-}
-
-export function dateLimitePreavis(dateEcheance: string, preavisMois: number): string | null {
-  if (!preavisMois || preavisMois <= 0) return null;
+export function dateLimitePreavis(dateEcheance: string, preavisMois: number): string {
+  if (!dateEcheance) return "";
   const d = new Date(dateEcheance + "T00:00:00");
-  d.setMonth(d.getMonth() - preavisMois);
+  d.setMonth(d.getMonth() - (preavisMois || 0));
   return d.toISOString().slice(0, 10);
 }
 
-export function preavisAtteint(c: Pick<Convention, "date_echeance" | "preavis_mois">): boolean {
-  const lim = dateLimitePreavis(c.date_echeance, c.preavis_mois);
-  if (!lim) return false;
-  return new Date() >= new Date(lim + "T00:00:00");
+export function joursRestants(dateEcheance: string): number {
+  if (!dateEcheance) return 0;
+  const now = new Date();
+  const target = new Date(dateEcheance + "T00:00:00");
+  const diffMs = target.getTime() - now.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-export function filtrerParFiltre(
-  c: Convention,
-  f: "total" | "actif" | "alerte" | "urgence" | "expire",
-): boolean {
-  if (c.archived) return false;
+export function calculerStatut(
+  dateEcheance: string,
+  seuilPersoJours?: number | null,
+): Statut {
+  const j = joursRestants(dateEcheance);
+  if (j < 0) return "expire";
+  if (j <= SEUIL_URGENCE_JOURS) return "urgence";
+  const seuil = seuilPersoJours && seuilPersoJours > 0 ? seuilPersoJours : SEUIL_ALERTE_JOURS;
+  if (j <= seuil) return "alerte";
+  return "actif";
+}
+
+export type FiltreCockpit = "tous" | "actifs" | "alerte" | "urgence" | "expires";
+
+export function correspondCockpit(c: Convention, filtre: FiltreCockpit): boolean {
+  if (filtre === "tous") return true;
   const j = joursRestants(c.date_echeance);
-  if (f === "total") return true;
-  if (f === "expire") return j < 0;
-  if (j < 0) return false;
-  if (f === "actif") return j > seuilDe(c) && !preavisAtteint(c);
-  if (f === "alerte") return j <= seuilDe(c);
-  return j < SEUIL_URGENCE_JOURS || preavisAtteint(c);
-}
-
-export function formatDate(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+  if (filtre === "expires") return j < 0;
+  if (filtre === "actifs") return j >= 0;
+  if (filtre === "urgence") return j >= 0 && j <= SEUIL_URGENCE_JOURS;
+  if (filtre === "alerte") {
+    const seuil = c.seuil_alerte_jours && c.seuil_alerte_jours > 0 ? c.seuil_alerte_jours : SEUIL_ALERTE_JOURS;
+    return j >= 0 && j <= seuil;
+  }
+  return true;
 }
 
 export const STATUT_INFO: Record<
   Statut,
-  { label: string; badgeCls: string; dotCls: string; description: string }
+  { label: string; badgeCls: string; className: string; dotCls: string; description: string }
 > = {
   actif: {
-    label: "Actif",
+    label: "En vigueur",
     badgeCls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+    className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
     dotCls: "bg-emerald-500",
-    description: "Convention en cours, au-delà du seuil d'alerte.",
+    description: "Convention valide sans urgence immédiate",
   },
   alerte: {
     label: "Alerte (< 5 mois)",
     badgeCls: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+    className: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
     dotCls: "bg-amber-500",
-    description: "Entrée dans la zone des 5 mois avant échéance.",
+    description: "Échéance proche, renouvellement ou préavis à préparer",
   },
   urgence: {
-    label: "Urgence critique (< 2 mois)",
+    label: "Urgence (< 2 mois)",
     badgeCls: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
-    dotCls: "bg-rose-500",
-    description: "Échéance imminente ou préavis contractuel atteint.",
+    className: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+    dotCls: "bg-rose-500 animate-pulse",
+    description: "Action immédiate requise avant expiration",
   },
   expire: {
     label: "Expirée",
     badgeCls: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
+    className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
     dotCls: "bg-zinc-400",
-    description: "Date d'échéance dépassée.",
+    description: "Date d'échéance dépassée",
   },
 };
+
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso.includes("T") ? iso : iso + "T00:00:00");
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Retire des mois a une date ISO (yyyy-mm-dd), jour pour jour.
+ */
+export function retirerMois(dateIso: string, mois: number): string {
+  if (!dateIso) return "";
+  const d = new Date(dateIso + "T00:00:00");
+  const jour = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - mois);
+  const dernierJour = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(jour, dernierJour));
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${j}`;
+}
+
+/**
+ * Convertit un seuil exprime en mois en nombre de jours avant l'echeance (jour pour jour).
+ */
+export function moisVersJours(dateEcheance: string, mois: number): number {
+  const cible = retirerMois(dateEcheance, mois);
+  if (!cible) return Math.round(mois * 30.44);
+  const a = new Date(cible + "T00:00:00").getTime();
+  const b = new Date(dateEcheance + "T00:00:00").getTime();
+  return Math.max(1, Math.round((b - a) / 86400000));
+}
+
+/**
+ * Duree en mois entre deux dates ISO (arrondie au mois inferieur).
+ */
+export function dureeEntreMois(dateDebut: string, dateFin: string): number {
+  if (!dateDebut || !dateFin) return 0;
+  const a = new Date(dateDebut + "T00:00:00");
+  const b = new Date(dateFin + "T00:00:00");
+  let mois = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (b.getDate() < a.getDate()) mois -= 1;
+  return Math.max(0, mois);
+}
+
+/**
+ * Date et heure exactes du premier declenchement de l'alarme d'une convention.
+ * La date d'alerte n'est jamais stockee : elle est recalculee depuis la date d'echeance.
+ * - Seuil personnalise (seuil_alerte_jours, converti depuis les mois a l'enregistrement) s'il existe,
+ *   sinon regle d'or : 5 mois avant l'echeance, jour pour jour.
+ * - Heure personnalisee (heure_alerte) sinon 00:00.
+ */
+export function momentAlerteConvention(c: Convention): Date | null {
+  if (!c.date_echeance) return null;
+
+  let dateAlerte: string;
+  if (c.seuil_alerte_jours && c.seuil_alerte_jours > 0) {
+    const d = new Date(c.date_echeance + "T00:00:00");
+    d.setDate(d.getDate() - c.seuil_alerte_jours);
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const j = String(d.getDate()).padStart(2, "0");
+    dateAlerte = `${d.getFullYear()}-${m}-${j}`;
+  } else {
+    dateAlerte = retirerMois(c.date_echeance, 5); // regle d'or : 5 mois, jour pour jour
+  }
+
+  const [hStr, mStr] = (c.heure_alerte || "00:00").split(":");
+  const h = parseInt(hStr || "0", 10);
+  const m = parseInt(mStr || "0", 10);
+
+  const result = new Date(dateAlerte + "T00:00:00");
+  result.setHours(h, m, 0, 0);
+  return result;
+}
+
+export function momentRappel8h(momentInitial: Date): Date {
+  return new Date(momentInitial.getTime() + 8 * 60 * 60 * 1000);
+}
