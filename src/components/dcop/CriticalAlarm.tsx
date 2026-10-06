@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BellRing, Clock, XCircle, CheckCircle } from "lucide-react";
+import { BellRing, Clock, CheckCircle } from "lucide-react";
 import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
 import {
   type Convention,
@@ -10,31 +10,28 @@ import {
 } from "@/lib/conventions";
 
 const AUDIO_PERSO = "/alarme.mp3";
+const DUREE_ALARME_MS = 60_000; // 1 minute complète (60 secondes)
 
 class SireneLimitee {
   private ctx: AudioContext | null = null;
   private timer: number | null = null;
+  private stopTimeout: number | null = null;
   private audio: HTMLAudioElement | null = null;
-  private cyclesCount = 0;
-  private maxCycles = 3;
 
   async start(onFinished?: () => void) {
-    if (this.timer || this.audio) return;
-    this.cyclesCount = 0;
+    if (this.timer || this.audio || this.stopTimeout) return;
+
+    // Arrêt automatique au bout de 60 secondes
+    this.stopTimeout = window.setTimeout(() => {
+      this.stop();
+      onFinished?.();
+    }, DUREE_ALARME_MS);
 
     try {
       const head = await fetch(AUDIO_PERSO, { method: "HEAD" });
       if (head.ok && (head.headers.get("content-type") ?? "").startsWith("audio")) {
         const a = new Audio(AUDIO_PERSO);
-        a.onended = () => {
-          this.cyclesCount++;
-          if (this.cyclesCount >= this.maxCycles) {
-            this.stop();
-            onFinished?.();
-          } else {
-            void a.play().catch(() => {});
-          }
-        };
+        a.loop = true; // boucle continue pendant la minute
         await a.play();
         this.audio = a;
         return;
@@ -42,10 +39,11 @@ class SireneLimitee {
     } catch {
       /* repli synthèse audio */
     }
-    this.startSynth(onFinished);
+
+    this.startSynth();
   }
 
-  private startSynth(onFinished?: () => void) {
+  private startSynth() {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -69,15 +67,6 @@ class SireneLimitee {
         o.start(s);
         o.stop(s + 0.22);
       });
-
-      this.cyclesCount++;
-      if (this.cyclesCount >= this.maxCycles) {
-        if (this.timer) {
-          window.clearInterval(this.timer);
-          this.timer = null;
-        }
-        onFinished?.();
-      }
     };
 
     bip();
@@ -90,6 +79,10 @@ class SireneLimitee {
   }
 
   stop() {
+    if (this.stopTimeout) {
+      window.clearTimeout(this.stopTimeout);
+      this.stopTimeout = null;
+    }
     if (this.timer) {
       window.clearInterval(this.timer);
       this.timer = null;
@@ -178,7 +171,7 @@ export function CriticalAlarm({
       .slice(0, 16);
     setSnoozeDateTime(localIso);
 
-    // Déclenchement de la sonnerie (3 fois)
+    // Déclenchement de la sonnerie pour 1 minute
     if (!sirene.current) sirene.current = new SireneLimitee();
     setIsRinging(true);
     void sirene.current.start(() => {
@@ -187,7 +180,7 @@ export function CriticalAlarm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventionDeclenchee]);
 
-  // Déblocage audio si contrainte navigateur
+  // Déblocage audio si contrainte navigateur (autoplay)
   useEffect(() => {
     if (!isRinging) return;
     const unlock = () => sirene.current?.resume();
@@ -206,7 +199,7 @@ export function CriticalAlarm({
     setIsRinging(false);
   }
 
-  // Arrêt définitif de l'alarme pour cette convention
+  // Arrêt définitif de l'alarme pour cette convention is ok
   async function arreterDefinitivement() {
     if (!activeConvention) return;
     couperSon();
