@@ -287,3 +287,12 @@ export function momentAlerteConvention(c: Convention): Date | null {
 export function momentRappel8h(momentInitial: Date): Date {
   return new Date(momentInitial.getTime() + 8 * 60 * 60 * 1000);
 }
+/** Libellé de l'alarme programmée affiché au registre. */
+export function libelleAlarme(c: Convention): string {
+  if (c.alarme_arretee_le) return "Alarme acquittée";
+  const fmt = (d: Date) =>
+    d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  if (c.alarme_reportee_jusqu_a) return `Reportée au ${fmt(new Date(c.alarme_reportee_jusqu_a))}`;
+  const m = momentAlerteConvention(c);
+  return m ? `Alarme : ${fmt(m)}` : "Aucune alarme";
+}
