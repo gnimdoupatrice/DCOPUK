@@ -31,12 +31,13 @@ import { ConventionDrawer, envoyerPdf, logHistorique } from "@/components/dcop/C
 import {
   CADRES_PAR_POLE,
   DEFAULT_POLES,
-  SEUIL_ALERTE_JOURS,
   SEUIL_URGENCE_JOURS,
   STATUT_INFO,
   ajouterMois,
   calculerEcheance,
   calculerStatut,
+  statutConvention,
+  momentAlerteConvention,
   dateLimitePreavis,
   dureeEntreMois,
   formatDate,
@@ -275,7 +276,7 @@ function Espace({ email }: { email: string }) {
         const jPreavis = limPreavis ? joursRestants(limPreavis) : 999;
         return {
           ...c,
-          statut: calculerStatut(c.date_echeance),
+          statut: statutConvention(c),
           jours: joursRestants(c.date_echeance),
           date_limite_preavis: limPreavis,
           jours_avant_preavis: jPreavis,
@@ -409,7 +410,7 @@ function Espace({ email }: { email: string }) {
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
             <Kpi icon={FileSignature} label="Conventions actives" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
-            <Kpi icon={AlertTriangle} label="En alerte (≤ 5 mois)" value={stats.alerte} tone="text-uk-orange" active={fCockpit === "alerte"} onClick={() => filtrerCockpit("alerte")} />
+            <Kpi icon={AlertTriangle} label="En alerte" value={stats.alerte} tone="text-uk-orange" active={fCockpit === "alerte"} onClick={() => filtrerCockpit("alerte")} />
             <Kpi icon={AlertTriangle} label="Urgences (< 60 j)" value={stats.urgence} tone="text-destructive" active={fCockpit === "urgence"} onClick={() => filtrerCockpit("urgence")} />
             <Kpi icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
           </div>
@@ -508,7 +509,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "Conventions actives", alerte: "En alerte (≤ 5 mois)", urgence: "Urgences (< 60 j ou préavis atteint)", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "Conventions actives", alerte: "En alerte", urgence: "Urgences (< 60 j ou préavis atteint)", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
@@ -604,7 +605,7 @@ function Espace({ email }: { email: string }) {
                       <td className="px-3 py-3 whitespace-nowrap">{formatDate(c.date_echeance)}</td>
                       <td className="px-3 py-3 font-semibold">{c.jours < 0 ? "Échue" : `J-${c.jours}`}</td>
                       <td className="px-3 py-3 text-xs">
-                        <p className="font-medium text-foreground">{c.preavis_mois} mois</p>
+                        <p className="font-medium text-foreground">{c.preavis_mois == null ? "Préavis —" : `${c.preavis_mois} mois`}</p>
                         <p className="text-muted-foreground">Reconduction {c.reconduction.toLowerCase()}</p>
                         {c.jours_avant_preavis <= 60 && c.jours_avant_preavis >= 0 && (
                           <span className="mt-1 inline-block rounded bg-uk-orange/15 px-1.5 py-0.5 font-bold text-uk-orange">
@@ -758,15 +759,11 @@ function ConventionForm({
   const [dateEcheance, setDateEcheance] = useState(initial?.date_echeance ?? "");
 
   // Paramétrage de l'alerte
-  const [moisAlerte, setMoisAlerte] = useState<string>(
-    initial?.seuil_alerte_jours != null
-      ? String(Math.max(1, Math.round(initial.seuil_alerte_jours / 30.44)))
-      : ""
-  );
-  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte || "00:00");
+  const [dateAlerte, setDateAlerte] = useState<string>(initial?.date_alerte ?? "");
+  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte ?? "");
 
-  const [preavis, setPreavis] = useState(initial?.preavis_mois ?? 3);
-  const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Expresse");
+  const [preavis, setPreavis] = useState<string>(initial?.preavis_mois != null ? String(initial.preavis_mois) : "");
+  const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Non reconductible");
   const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -776,7 +773,8 @@ function ConventionForm({
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
   const dureeCalculee = signature && dateEcheance ? dureeEntreMois(signature, dateEcheance) : 0;
-  const statut = dateEcheance ? calculerStatut(dateEcheance) : null;
+  const momentAlerte = dateAlerte && heureAlerte ? momentAlerteConvention({ date_alerte: dateAlerte, heure_alerte: heureAlerte } as Convention) : null;
+  const statut = dateEcheance ? calculerStatut(dateEcheance, momentAlerte) : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -792,6 +790,14 @@ function ConventionForm({
       setError("La date de fin doit être postérieure à la date de signature.");
       return;
     }
+    if (!dateAlerte || !heureAlerte) {
+      setError("Veuillez renseigner la date et l'heure de l'alerte.");
+      return;
+    }
+    if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
+      setError("Le préavis doit être un nombre de mois positif.");
+      return;
+    }
     if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
       setError("Le document doit être un PDF de 20 Mo maximum.");
       return;
@@ -801,11 +807,6 @@ function ConventionForm({
     if (pole === "__new") {
       await supabase.from("poles").insert({ nom: poleFinal });
     }
-
-    const seuilJours =
-      moisAlerte.trim() === ""
-        ? null
-        : moisVersJours(dateEcheance, Math.max(1, Number(moisAlerte)));
 
     const payload = {
       pole: poleFinal,
@@ -817,10 +818,11 @@ function ConventionForm({
       date_signature: signature,
       duree_mois: Math.max(1, dureeCalculee),
       date_echeance: dateEcheance,
-      preavis_mois: preavis,
+      preavis_mois: preavis.trim() === "" ? null : Math.round(Number(preavis)),
       reconduction,
-      seuil_alerte_jours: seuilJours,
-      heure_alerte: heureAlerte.trim() || "00:00",
+      date_alerte: dateAlerte,
+      seuil_alerte_jours: null,
+      heure_alerte: heureAlerte,
     };
 
     const res = initial
@@ -911,41 +913,23 @@ function ConventionForm({
                 <input readOnly value={signature && dateEcheance ? `${dureeCalculee} mois` : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
               </Field>
 
-              <Field label="Préavis de dénonciation (mois)">
-                <input type="number" min={0} value={preavis} onChange={(e) => setPreavis(Number(e.target.value))} className={inputCls} />
+              <Field label="Préavis de dénonciation (mois, optionnel)">
+                <input type="number" min={0} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls} />
               </Field>
               <Field label="Reconduction" className="sm:col-span-2">
                 <select value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls}>
+                  <option>Non reconductible</option>
                   <option>Expresse</option>
                   <option>Tacite</option>
-                  <option>Non reconductible</option>
                 </select>
               </Field>
 
-              <Field label="Alerte : délai avant échéance (en mois)" className="sm:col-span-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={moisAlerte}
-                  placeholder="Vide = règle générale : 5 mois avant échéance"
-                  onChange={(e) => setMoisAlerte(e.target.value)}
-                  className={inputCls}
-                />
+              <Field label="Date de l'alerte *" className="sm:col-span-2">
+                <input type="date" required value={dateAlerte} onChange={(e) => setDateAlerte(e.target.value)} className={inputCls} />
               </Field>
-              <Field label="Heure précise de sonnerie">
-                <input
-                  type="time"
-                  value={heureAlerte}
-                  onChange={(e) => setHeureAlerte(e.target.value)}
-                  className={inputCls}
-                />
+              <Field label="Heure de l'alerte *">
+                <input type="time" required value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
               </Field>
-
-              {dureeCalculee > 0 && dureeCalculee < 5 && (
-                <div className="sm:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                  <strong>Convention de courte durée ({dureeCalculee} mois) :</strong> la durée totale étant inférieure à la règle générale de 5 mois, précisez ci-dessus le délai en mois (ex. 1 ou 2 mois) et l'heure pour déclencher votre alerte.
-                </div>
-              )}
 
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />

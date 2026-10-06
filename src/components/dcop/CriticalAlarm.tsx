@@ -146,6 +146,7 @@ export function CriticalAlarm({
 
       // 3. Calcul de la première alarme (Date + Heure précise ou 00:00)
       const premiereAlarme = momentAlerteConvention(c);
+      if (!premiereAlarme) continue;
       const diffPremiere = now.getTime() - premiereAlarme.getTime();
 
       // Première alarme sonne si on a atteint l'heure et dans l'heure qui suit
@@ -154,7 +155,7 @@ export function CriticalAlarm({
       }
 
       // 4. Deuxième alarme : 8 heures après la première
-      const deuxiemeAlarme = momentRappel8h(c);
+      const deuxiemeAlarme = momentRappel8h(premiereAlarme);
       const diffDeuxieme = now.getTime() - deuxiemeAlarme.getTime();
       if (diffDeuxieme >= 0 && diffDeuxieme < 3600_000) {
         return { convention: c, type: "deuxieme" as const };
