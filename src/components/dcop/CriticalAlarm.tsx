@@ -106,10 +106,17 @@ class SireneLimitee {
 export function CriticalAlarm({
   conventions,
   onRefresh,
+  onActiveChange,
 }: {
   conventions: Convention[];
   onRefresh?: () => void;
+  onActiveChange?: (id: string | null) => void;
 }) {
+  // Surcharges locales immédiates (report / arrêt) en attendant le rechargement du registre
+  const [overrides, setOverrides] = useState<
+    Record<string, { reportee?: string | null; arretee?: string | null }>
+  >({});
+  const dejaSonne = useRef<Set<string>>(new Set());
   const [tick, setTick] = useState(0);
   const [activeConvention, setActiveConvention] = useState<Convention | null>(null);
   const [isRinging, setIsRinging] = useState(false);
@@ -127,7 +134,15 @@ export function CriticalAlarm({
   const conventionDeclenchee = useMemo(() => {
     const now = new Date();
 
-    for (const c of conventions) {
+    for (const brut of conventions) {
+      const o = overrides[brut.id];
+      const c: Convention = o
+        ? {
+            ...brut,
+            ...(o.reportee !== undefined ? { alarme_reportee_jusqu_a: o.reportee } : {}),
+            ...(o.arretee !== undefined ? { alarme_arretee_le: o.arretee } : {}),
+          }
+        : brut;
       if (c.archived) continue;
       const j = joursRestants(c.date_echeance);
       if (j < 0) continue; // expirée ignorée
@@ -138,8 +153,10 @@ export function CriticalAlarm({
       // 2. Si un report personnalisé est en cours
       if (c.alarme_reportee_jusqu_a) {
         const report = new Date(c.alarme_reportee_jusqu_a);
+        // Pendant le report, l'ancienne heure d'alerte est ignorée
         if (now >= report && now.getTime() - report.getTime() < 3600_000) {
-          return { convention: c, type: "report" as const };
+          const key = `${c.id}|report|${report.getTime()}`;
+          if (!dejaSonne.current.has(key)) return { convention: c, type: "report" as const, key };
         }
         continue;
       }
@@ -151,28 +168,29 @@ export function CriticalAlarm({
 
       // Première alarme sonne si on a atteint l'heure et dans l'heure qui suit
       if (diffPremiere >= 0 && diffPremiere < 3600_000) {
-        return { convention: c, type: "premiere" as const };
+        const key = `${c.id}|premiere|${premiereAlarme.getTime()}`;
+        if (!dejaSonne.current.has(key)) return { convention: c, type: "premiere" as const, key };
       }
 
       // 4. Deuxième alarme : 8 heures après la première
       const deuxiemeAlarme = momentRappel8h(premiereAlarme);
       const diffDeuxieme = now.getTime() - deuxiemeAlarme.getTime();
       if (diffDeuxieme >= 0 && diffDeuxieme < 3600_000) {
-        return { convention: c, type: "deuxieme" as const };
+        const key = `${c.id}|deuxieme|${deuxiemeAlarme.getTime()}`;
+        if (!dejaSonne.current.has(key)) return { convention: c, type: "deuxieme" as const, key };
       }
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conventions, tick]);
+  }, [conventions, tick, overrides]);
 
   useEffect(() => {
-    if (!conventionDeclenchee) {
-      setActiveConvention(null);
-      return;
-    }
-
-    const { convention } = conventionDeclenchee;
+    if (!conventionDeclenchee) return;
+    const { convention, key } = conventionDeclenchee;
+    if (activeConvention) return; // une alarme est déjà affichée
+    dejaSonne.current.add(key);
     setActiveConvention(convention);
+    onActiveChange?.(convention.id);
 
     // Initialise l'heure de report par défaut (+1 heure)
     const defSnooze = new Date(Date.now() + 60 * 60 * 1000);
@@ -187,6 +205,7 @@ export function CriticalAlarm({
     void sirene.current.start(() => {
       setIsRinging(false);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventionDeclenchee]);
 
   // Déblocage audio si contrainte navigateur
@@ -213,21 +232,24 @@ export function CriticalAlarm({
     if (!activeConvention) return;
     couperSon();
     const nowIso = new Date().toISOString();
+    const id = activeConvention.id;
+    setOverrides((o) => ({ ...o, [id]: { reportee: null, arretee: nowIso } }));
+    setActiveConvention(null);
+    onActiveChange?.(null);
     await supabase
       .from("conventions")
       .update({
         alarme_arretee_le: nowIso,
         alarme_reportee_jusqu_a: null,
       })
-      .eq("id", activeConvention.id);
+      .eq("id", id);
 
     await supabase.from("convention_historique").insert({
-      convention_id: activeConvention.id,
+      convention_id: id,
       action: "Alarme arrêtée définitivement",
       note: "Le Directeur a pris acte et a désactivé les sonneries de cette échéance.",
     });
 
-    setActiveConvention(null);
     onRefresh?.();
   }
 
@@ -236,21 +258,24 @@ export function CriticalAlarm({
     if (!activeConvention || !snoozeDateTime) return;
     couperSon();
     const targetIso = new Date(snoozeDateTime).toISOString();
+    const id = activeConvention.id;
+    setOverrides((o) => ({ ...o, [id]: { reportee: targetIso, arretee: null } }));
+    setActiveConvention(null);
+    setShowSnoozeInput(false);
+    onActiveChange?.(null);
     await supabase
       .from("conventions")
       .update({
         alarme_reportee_jusqu_a: targetIso,
       })
-      .eq("id", activeConvention.id);
+      .eq("id", id);
 
     await supabase.from("convention_historique").insert({
-      convention_id: activeConvention.id,
+      convention_id: id,
       action: "Alarme reportée",
       note: `Alarme reportée jusqu'au ${new Date(snoozeDateTime).toLocaleString("fr-FR")}`,
     });
 
-    setActiveConvention(null);
-    setShowSnoozeInput(false);
     onRefresh?.();
   }
 
