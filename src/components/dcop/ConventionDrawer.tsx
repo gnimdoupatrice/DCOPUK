@@ -7,6 +7,9 @@ import {
   STATUT_INFO,
   ajouterMois,
   statutConvention,
+  etatAlerte,
+  libelleAlarme,
+  SOUS_MENTION_ALERTE,
   formatDate,
   joursRestants,
   type Convention,
@@ -39,11 +42,13 @@ export function ConventionDrawer({
   onClose,
   onChanged,
   onEdit,
+  onRegulariser,
 }: {
   convention: Convention;
   onClose: () => void;
   onChanged: () => void;
   onEdit: () => void;
+  onRegulariser?: () => void;
 }) {
   const [panel, setPanel] = useState<Panel>(null);
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
@@ -57,6 +62,7 @@ export function ConventionDrawer({
 
   const jours = joursRestants(c.date_echeance);
   const statut = statutConvention(c);
+  const etat = etatAlerte(c);
   const nouvelleEcheance = ajouterMois(c.date_echeance, prolongation || 0);
 
   async function loadHistorique() {
@@ -204,6 +210,19 @@ export function ConventionDrawer({
               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUT_INFO[statut].className}`}>
                 {STATUT_INFO[statut].label}
               </span>
+              {statut === "actif" && SOUS_MENTION_ALERTE[etat] && (
+                <span className={`text-xs font-semibold ${SOUS_MENTION_ALERTE[etat]!.cls}`}>{SOUS_MENTION_ALERTE[etat]!.label}</span>
+              )}
+              <span className="text-right text-[11px] text-muted-foreground">{libelleAlarme(c)}</span>
+              {statut === "actif" && etat === "depassee" && onRegulariser && (
+                <button
+                  type="button"
+                  onClick={onRegulariser}
+                  className="mt-1 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:brightness-110"
+                >
+                  Régulariser (reporter ou arrêter)
+                </button>
+              )}
               {c.archived && (
                 <span className="rounded-full bg-foreground px-3 py-1 text-xs font-semibold text-background">Clôturée / archivée</span>
               )}

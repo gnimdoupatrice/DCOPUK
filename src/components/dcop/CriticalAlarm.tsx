@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BellRing, Clock, XCircle, CheckCircle } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
 import {
   type Convention,
   formatDate,
   joursRestants,
-  momentAlerteConvention,
-  momentRappel8h,
+  etatAlerte,
+  momentReferenceAlerte,
 } from "@/lib/conventions";
 
 const AUDIO_PERSO = "/alarme.mp3";
@@ -150,35 +150,14 @@ export function CriticalAlarm({
       // 1. Si déjà arrêtée définitivement par le Directeur -> aucune alarme
       if (c.alarme_arretee_le) continue;
 
-      // 2. Si un report personnalisé est en cours
-      if (c.alarme_reportee_jusqu_a) {
-        const report = new Date(c.alarme_reportee_jusqu_a);
-        // Pendant le report, l'ancienne heure d'alerte est ignorée
-        if (now >= report && now.getTime() - report.getTime() < 3600_000) {
-          const key = `${c.id}|report|${report.getTime()}`;
-          if (!dejaSonne.current.has(key)) return { convention: c, type: "report" as const, key };
-        }
-        continue;
-      }
-
-      // 3. Calcul de la première alarme (Date + Heure précise ou 00:00)
-      const premiereAlarme = momentAlerteConvention(c);
-      if (!premiereAlarme) continue;
-      const diffPremiere = now.getTime() - premiereAlarme.getTime();
-
-      // Première alarme sonne si on a atteint l'heure et dans l'heure qui suit
-      if (diffPremiere >= 0 && diffPremiere < 3600_000) {
-        const key = `${c.id}|premiere|${premiereAlarme.getTime()}`;
-        if (!dejaSonne.current.has(key)) return { convention: c, type: "premiere" as const, key };
-      }
-
-      // 4. Deuxième alarme : 8 heures après la première
-      const deuxiemeAlarme = momentRappel8h(premiereAlarme);
-      const diffDeuxieme = now.getTime() - deuxiemeAlarme.getTime();
-      if (diffDeuxieme >= 0 && diffDeuxieme < 3600_000) {
-        const key = `${c.id}|deuxieme|${deuxiemeAlarme.getTime()}`;
-        if (!dejaSonne.current.has(key)) return { convention: c, type: "deuxieme" as const, key };
-      }
+      // 2. Moment de référence : report éventuel, sinon heure H programmée
+      const ref = momentReferenceAlerte(c);
+      if (!ref) continue;
+      if (etatAlerte(c, now.getTime()) !== "sonnerie") continue; // aucun son rétroactif
+      const diff = now.getTime() - ref.getTime();
+      const type = diff < 3600_000 ? ("premiere" as const) : ("deuxieme" as const);
+      const key = `${c.id}|${type}|${ref.getTime()}`;
+      if (!dejaSonne.current.has(key)) return { convention: c, type, key };
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,20 +215,7 @@ export function CriticalAlarm({
     setOverrides((o) => ({ ...o, [id]: { reportee: null, arretee: nowIso } }));
     setActiveConvention(null);
     onActiveChange?.(null);
-    await supabase
-      .from("conventions")
-      .update({
-        alarme_arretee_le: nowIso,
-        alarme_reportee_jusqu_a: null,
-      })
-      .eq("id", id);
-
-    await supabase.from("convention_historique").insert({
-      convention_id: id,
-      action: "Alarme arrêtée définitivement",
-      note: "Le Directeur a pris acte et a désactivé les sonneries de cette échéance.",
-    });
-
+    await arreterAlerte(id);
     onRefresh?.();
   }
 
@@ -263,19 +229,7 @@ export function CriticalAlarm({
     setActiveConvention(null);
     setShowSnoozeInput(false);
     onActiveChange?.(null);
-    await supabase
-      .from("conventions")
-      .update({
-        alarme_reportee_jusqu_a: targetIso,
-      })
-      .eq("id", id);
-
-    await supabase.from("convention_historique").insert({
-      convention_id: id,
-      action: "Alarme reportée",
-      note: `Alarme reportée jusqu'au ${new Date(snoozeDateTime).toLocaleString("fr-FR")}`,
-    });
-
+    await reporterAlerte(id, snoozeDateTime);
     onRefresh?.();
   }
 
@@ -295,14 +249,6 @@ export function CriticalAlarm({
               <p className="text-xs opacity-90">Heure de consigne : {heureAffichee}</p>
             </div>
           </div>
-          {isRinging && (
-            <button
-              onClick={couperSon}
-              className="rounded-lg bg-black/30 px-3 py-1 text-xs font-semibold hover:bg-black/50"
-            >
-              Couper la sonnerie
-            </button>
-          )}
         </div>
 
         <div className="space-y-4 p-5 text-sm text-foreground">
@@ -326,7 +272,7 @@ export function CriticalAlarm({
                 className="flex items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 py-2.5 font-medium text-foreground hover:bg-muted"
               >
                 <Clock className="h-4 w-4 text-amber-600" />
-                Reporter l'alarme
+                Reporter l'alerte
               </button>
               <button
                 type="button"
