@@ -200,6 +200,14 @@ function Espace({ email }: { email: string }) {
     };
   }, [conventions]);
 
+  function handleSort(key: SortField) {
+    if (sortKey === key) setSortAsc(!sortAsc);
+    else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  }
+
   async function load() {
     setLoading(true);
     const [c, p] = await Promise.all([
