@@ -122,9 +122,13 @@ export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
   }
 }
 
-export type Statut = "actif" | "alerte" | "urgence" | "expire";
+export type Statut = "actif" | "expire";
 
-export const SEUIL_URGENCE_JOURS = 60;  // < 2 mois
+/** État de l'alerte d'une convention en vigueur. */
+export type EtatAlerte = "aucune" | "programmee" | "sonnerie" | "reportee" | "arretee" | "depassee";
+
+const H1 = 3600_000;
+const H8 = 8 * H1;
 
 export function calculerEcheance(dateSignature: string, dureeMois: number): string {
   if (!dateSignature || !dureeMois) return "";
@@ -148,34 +152,54 @@ export function joursRestants(dateEcheance: string): number {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-/**
- * Statut : expirée (fin dépassée) > urgence (< 60 j) > alerte (date+heure d'alerte atteintes) > en vigueur.
- */
-export function calculerStatut(dateEcheance: string, momentAlerte?: Date | null): Statut {
-  const j = joursRestants(dateEcheance);
-  if (j < 0) return "expire";
-  if (j <= SEUIL_URGENCE_JOURS) return "urgence";
-  if (momentAlerte && Date.now() >= momentAlerte.getTime()) return "alerte";
-  return "actif";
+/** Statut contractuel binaire : En vigueur ou Expirée. */
+export function calculerStatut(dateEcheance: string, _momentAlerte?: Date | null): Statut {
+  return joursRestants(dateEcheance) < 0 ? "expire" : "actif";
 }
 
 export function statutConvention(c: Convention): Statut {
-  return calculerStatut(c.date_echeance, momentAlerteConvention(c));
+  return calculerStatut(c.date_echeance);
 }
 
-export type FiltreCockpit = "" | "actives" | "alerte" | "urgence" | "expire";
+/** Moment de référence de l'alerte : report s'il existe, sinon l'heure H programmée. */
+export function momentReferenceAlerte(c: Convention): Date | null {
+  if (c.alarme_reportee_jusqu_a) {
+    const r = new Date(c.alarme_reportee_jusqu_a);
+    if (!isNaN(r.getTime())) return r;
+  }
+  return momentAlerteConvention(c);
+}
+
+/**
+ * Sonnerie à H (fenêtre 1 h) et rappel à H+8 (fenêtre 1 h).
+ * Entre H+1 et H+8, puis après H+9 sans action : « dépassée » (silencieux).
+ */
+export function etatAlerte(c: Convention, now: number = Date.now()): EtatAlerte {
+  if (c.alarme_arretee_le) return "arretee";
+  const m = momentReferenceAlerte(c);
+  if (!m) return "aucune";
+  const diff = now - m.getTime();
+  if (diff < 0) return c.alarme_reportee_jusqu_a ? "reportee" : "programmee";
+  if (diff < H1 || (diff >= H8 && diff < H8 + H1)) return "sonnerie";
+  return "depassee";
+}
+
+export const SOUS_MENTION_ALERTE: Partial<Record<EtatAlerte, { label: string; cls: string }>> = {
+  arretee: { label: "Alerte éteinte définitivement", cls: "text-muted-foreground" },
+  reportee: { label: "Alerte reportée", cls: "text-uk-blue" },
+  depassee: { label: "Alerte dépassée sans aucune action", cls: "text-destructive" },
+  sonnerie: { label: "Alerte en cours", cls: "text-destructive" },
+};
+
+export type FiltreCockpit = "" | "actives" | "depassee" | "reportee" | "arretee" | "expire";
 
 export function correspondCockpit(c: Convention, filtre: FiltreCockpit): boolean {
   if (!filtre) return true;
-  const j = joursRestants(c.date_echeance);
-  if (filtre === "expire") return j < 0;
-  if (filtre === "actives") return j >= 0;
-  if (filtre === "urgence") return j >= 0 && j <= SEUIL_URGENCE_JOURS;
-  if (filtre === "alerte") {
-    const m = momentAlerteConvention(c);
-    return j >= 0 && !!m && Date.now() >= m.getTime();
-  }
-  return true;
+  const expiree = joursRestants(c.date_echeance) < 0;
+  if (filtre === "expire") return expiree;
+  if (expiree) return false;
+  if (filtre === "actives") return true;
+  return etatAlerte(c) === filtre;
 }
 
 export const STATUT_INFO: Record<
@@ -187,21 +211,7 @@ export const STATUT_INFO: Record<
     badgeCls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
     className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
     dotCls: "bg-emerald-500",
-    description: "Convention valide sans urgence immédiate",
-  },
-  alerte: {
-    label: "En alerte",
-    badgeCls: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
-    className: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
-    dotCls: "bg-amber-500",
-    description: "Date et heure d'alerte atteintes",
-  },
-  urgence: {
-    label: "Urgence critique",
-    badgeCls: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
-    className: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
-    dotCls: "bg-rose-500 animate-pulse",
-    description: "Action immédiate requise avant expiration",
+    description: "Convention en cours de validité",
   },
   expire: {
     label: "Expirée",
@@ -287,12 +297,25 @@ export function momentAlerteConvention(c: Convention): Date | null {
 export function momentRappel8h(momentInitial: Date): Date {
   return new Date(momentInitial.getTime() + 8 * 60 * 60 * 1000);
 }
-/** Libellé de l'alarme programmée affiché au registre. */
+const fmtDH = (d: Date) =>
+  d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** Précision de l'alerte affichée en colonne « Préavis & Alerte ». */
 export function libelleAlarme(c: Convention): string {
-  if (c.alarme_arretee_le) return "Alarme acquittée";
-  const fmt = (d: Date) =>
-    d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  if (c.alarme_reportee_jusqu_a) return `Reportée au ${fmt(new Date(c.alarme_reportee_jusqu_a))}`;
-  const m = momentAlerteConvention(c);
-  return m ? `Alarme : ${fmt(m)}` : "Aucune alarme";
+  const etat = etatAlerte(c);
+  const m = momentReferenceAlerte(c);
+  switch (etat) {
+    case "arretee":
+      return `Arrêtée définitivement le ${fmtDH(new Date(c.alarme_arretee_le!))}`;
+    case "reportee":
+      return `Reportée au ${fmtDH(m!)}`;
+    case "programmee":
+      return `Programmée le ${fmtDH(m!)}`;
+    case "sonnerie":
+      return `En cours de sonnerie (H : ${fmtDH(m!)})`;
+    case "depassee":
+      return `Passée sans action — H : ${fmtDH(m!)} · rappel H+8 : ${fmtDH(momentRappel8h(m!))}`;
+    default:
+      return "Aucune alerte programmée";
+  }
 }
