@@ -268,7 +268,7 @@ export function dureeEntreMois(dateDebut: string, dateFin: string): number {
 
 /**
  * Date et heure exactes de l'alarme, choisies par le Directeur (date_alerte + heure_alerte).
- * Repli pour les anciennes fiches : seuil_alerte_jours avant l'échéance. Sinon aucune alerte.
+ * Repli pour les anciennes fiches : seuil_alerte_jours avant l'échéance. Sinon aucune alerte 'est okk pour ce .
  */
 export function momentAlerteConvention(c: Convention): Date | null {
   let dateAlerte = c.date_alerte || "";
