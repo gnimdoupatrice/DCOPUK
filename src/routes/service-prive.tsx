@@ -10,7 +10,6 @@ import {
   ArrowUp,
   ArrowUpDown,
   Bell,
-  BellOff,
   Download,
   Eye,
   FileSignature,
@@ -22,7 +21,6 @@ import {
   Plus,
   Search,
   Trash2,
-  Volume2,
   X,
 } from "lucide-react";
 import ukEmblem from "@/assets/uk-emblem.png";
@@ -41,7 +39,7 @@ import {
   dateLimitePreavis,
   dureeEntreMois,
   formatDate,
-  jouerSignalAlerte,
+  libelleAlarme,
   joursRestants,
   moisVersJours,
   retirerMois,
@@ -105,6 +103,7 @@ function Login() {
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError("Identifiants incorrects ou compte inexistant.");
+    else sessionStorage.setItem("dcop_login_explicite", "1");
     setBusy(false);
   }
 
@@ -190,24 +189,16 @@ function Espace({ email }: { email: string }) {
   const [sortKey, setSortKey] = useState<SortField>("jours");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Préférence sonore (activé/coupé)
-  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("dcop_sound") !== "off");
-
-  function toggleSound() {
-    const next = !soundEnabled;
-    setSoundEnabled(next);
-    localStorage.setItem("dcop_sound", next ? "on" : "off");
-    if (next) jouerSignalAlerte("alerte");
-  }
-
-  function handleSort(key: SortField) {
-    if (sortKey === key) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortKey(key);
-      setSortAsc(true);
-    }
-  }
+  const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
+  const [resumeConnexion, setResumeConnexion] = useState(false);
+  const resumeStats = useMemo(() => {
+    const actives = conventions.filter((c) => !c.archived);
+    return {
+      urgence: actives.filter((c) => correspondCockpit(c, "urgence")).length,
+      alerte: actives.filter((c) => correspondCockpit(c, "alerte")).length,
+      expire: actives.filter((c) => correspondCockpit(c, "expire")).length,
+    };
+  }, [conventions]);
 
   async function load() {
     setLoading(true);
@@ -220,6 +211,11 @@ function Espace({ email }: { email: string }) {
       setLoadError(null);
       const list = (c.data ?? []) as Convention[];
       setConventions(list);
+      // Résumé uniquement après une saisie explicite des identifiants
+      if (sessionStorage.getItem("dcop_login_explicite") === "1") {
+        sessionStorage.removeItem("dcop_login_explicite");
+        setResumeConnexion(true);
+      }
     }
     if (!p.error && p.data?.length) {
       setPoles(Array.from(new Set([...DEFAULT_POLES, ...p.data.map((r) => r.nom as string)])));
@@ -434,19 +430,7 @@ function Espace({ email }: { email: string }) {
               {showArchived ? "Conventions clôturées / archivées" : "Registre des conventions"}
             </h2>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={toggleSound}
-                title={soundEnabled ? "Sons actifs (cliquer pour couper)" : "Sons coupés (cliquer pour réactiver)"}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                  soundEnabled
-                    ? "border-uk-blue/30 bg-uk-blue/10 text-uk-blue"
-                    : "border-border bg-card text-muted-foreground"
-                }`}
-              >
-                {soundEnabled ? <Volume2 className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                <span className="hidden sm:inline">{soundEnabled ? "Son actif" : "Silencieux"}</span>
-              </button>
+
 
               <button
                 type="button"
@@ -580,7 +564,9 @@ function Espace({ email }: { email: string }) {
                       onClick={() => setSelectedId(c.id)}
                       onKeyDown={(e) => e.key === "Enter" && setSelectedId(c.id)}
                       tabIndex={0}
-                      className="cursor-pointer border-b border-border align-top hover:bg-muted focus:bg-muted focus:outline-none"
+                      className={`cursor-pointer border-b border-border align-top hover:bg-muted focus:bg-muted focus:outline-none ${
+                        alarmeActiveId === c.id ? "animate-pulse bg-destructive/10 ring-2 ring-inset ring-destructive/50" : ""
+                      }`}
                     >
                       <td className="px-3 py-3">
                         <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUT_INFO[c.statut].className}`}>
@@ -617,6 +603,7 @@ function Espace({ email }: { email: string }) {
                             Délai préavis dépassé
                           </span>
                         )}
+                        <p className="mt-1 whitespace-nowrap font-medium text-uk-blue">{libelleAlarme(c)}</p>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
@@ -693,7 +680,21 @@ function Espace({ email }: { email: string }) {
         />
       )}
 
-      <CriticalAlarm conventions={conventions} />
+      <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />
+      {resumeConnexion && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setResumeConnexion(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-heading text-lg font-bold text-uk-blue">Bienvenue — point de situation</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Synthèse du registre des conventions à votre connexion.</p>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li className="flex justify-between rounded-lg bg-rose-100 px-3 py-2 font-semibold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"><span>Urgences critiques (&lt; 60 j)</span><span>{resumeStats.urgence}</span></li>
+              <li className="flex justify-between rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"><span>Conventions en alerte</span><span>{resumeStats.alerte}</span></li>
+              <li className="flex justify-between rounded-lg bg-zinc-200 px-3 py-2 font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"><span>Conventions expirées</span><span>{resumeStats.expire}</span></li>
+            </ul>
+            <button type="button" onClick={() => setResumeConnexion(false)} className="mt-5 w-full rounded-lg bg-uk-blue px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110">J'ai compris</button>
+          </div>
+        </div>
+      )}
       <InstallPwa />
     </div>
   );
