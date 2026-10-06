@@ -163,13 +163,13 @@ export function statutConvention(c: Convention): Statut {
   return calculerStatut(c.date_echeance, momentAlerteConvention(c));
 }
 
-export type FiltreCockpit = "tous" | "actifs" | "alerte" | "urgence" | "expires";
+export type FiltreCockpit = "" | "actives" | "alerte" | "urgence" | "expire";
 
 export function correspondCockpit(c: Convention, filtre: FiltreCockpit): boolean {
-  if (filtre === "tous") return true;
+  if (!filtre) return true;
   const j = joursRestants(c.date_echeance);
-  if (filtre === "expires") return j < 0;
-  if (filtre === "actifs") return j >= 0;
+  if (filtre === "expire") return j < 0;
+  if (filtre === "actives") return j >= 0;
   if (filtre === "urgence") return j >= 0 && j <= SEUIL_URGENCE_JOURS;
   if (filtre === "alerte") {
     const m = momentAlerteConvention(c);
