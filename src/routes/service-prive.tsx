@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CriticalAlarm } from "@/components/dcop/CriticalAlarm";
+import { RegulariserAlerte } from "@/components/dcop/RegulariserAlerte";
 import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -29,7 +30,8 @@ import { ConventionDrawer, envoyerPdf, logHistorique } from "@/components/dcop/C
 import {
   CADRES_PAR_POLE,
   DEFAULT_POLES,
-  SEUIL_URGENCE_JOURS,
+  etatAlerte,
+  SOUS_MENTION_ALERTE,
   STATUT_INFO,
   ajouterMois,
   calculerEcheance,
@@ -191,11 +193,14 @@ function Espace({ email }: { email: string }) {
 
   const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
   const [resumeConnexion, setResumeConnexion] = useState(false);
+  const [regulariserId, setRegulariserId] = useState<string | null>(null);
   const resumeStats = useMemo(() => {
     const actives = conventions.filter((c) => !c.archived);
     return {
-      urgence: actives.filter((c) => correspondCockpit(c, "urgence")).length,
-      alerte: actives.filter((c) => correspondCockpit(c, "alerte")).length,
+      enVigueur: actives.filter((c) => correspondCockpit(c, "actives")).length,
+      depassee: actives.filter((c) => correspondCockpit(c, "depassee")).length,
+      reportee: actives.filter((c) => correspondCockpit(c, "reportee")).length,
+      arretee: actives.filter((c) => correspondCockpit(c, "arretee")).length,
       expire: actives.filter((c) => correspondCockpit(c, "expire")).length,
     };
   }, [conventions]);
@@ -281,6 +286,7 @@ function Espace({ email }: { email: string }) {
         return {
           ...c,
           statut: statutConvention(c),
+          etat: etatAlerte(c),
           jours: joursRestants(c.date_echeance),
           date_limite_preavis: limPreavis,
           jours_avant_preavis: jPreavis,
@@ -315,8 +321,9 @@ function Espace({ email }: { email: string }) {
     return {
       total: actives.length,
       enCours: n("actives"),
-      alerte: n("alerte"),
-      urgence: n("urgence"),
+      depassee: n("depassee"),
+      reportee: n("reportee"),
+      arretee: n("arretee"),
       expire: n("expire"),
       parPole,
     };
@@ -411,11 +418,12 @@ function Espace({ email }: { email: string }) {
         {/* Cockpit */}
         <section>
           <h2 className="mb-4 text-lg font-bold text-uk-blue">Cockpit de synthèse</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
-            <Kpi icon={FileSignature} label="Conventions actives" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
-            <Kpi icon={AlertTriangle} label="En alerte" value={stats.alerte} tone="text-uk-orange" active={fCockpit === "alerte"} onClick={() => filtrerCockpit("alerte")} />
-            <Kpi icon={AlertTriangle} label="Urgences (< 60 j)" value={stats.urgence} tone="text-destructive" active={fCockpit === "urgence"} onClick={() => filtrerCockpit("urgence")} />
+            <Kpi icon={FileSignature} label="En vigueur" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
+            <Kpi icon={AlertTriangle} label="Alertes dépassées sans action" value={stats.depassee} tone="text-destructive" active={fCockpit === "depassee"} onClick={() => filtrerCockpit("depassee")} />
+            <Kpi icon={AlertTriangle} label="Alertes reportées" value={stats.reportee} tone="text-uk-orange" active={fCockpit === "reportee"} onClick={() => filtrerCockpit("reportee")} />
+            <Kpi icon={Layers} label="Alertes arrêtées définitivement" value={stats.arretee} tone="text-uk-blue" active={fCockpit === "arretee"} onClick={() => filtrerCockpit("arretee")} />
             <Kpi icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
           </div>
           <div className="mt-4 rounded-xl bg-card p-5 shadow-sm">
@@ -501,7 +509,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "Conventions actives", alerte: "En alerte", urgence: "Urgences (< 60 j ou préavis atteint)", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "En vigueur", depassee: "Alertes dépassées sans action", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
@@ -580,6 +588,11 @@ function Espace({ email }: { email: string }) {
                         <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUT_INFO[c.statut].className}`}>
                           {STATUT_INFO[c.statut].label}
                         </span>
+                        {c.statut === "actif" && SOUS_MENTION_ALERTE[c.etat] && (
+                          <p className={`mt-1 text-[11px] font-semibold ${SOUS_MENTION_ALERTE[c.etat]!.cls}`}>
+                            {SOUS_MENTION_ALERTE[c.etat]!.label}
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <p className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -611,10 +624,23 @@ function Espace({ email }: { email: string }) {
                             Délai préavis dépassé
                           </span>
                         )}
-                        <p className="mt-1 whitespace-nowrap font-medium text-uk-blue">{libelleAlarme(c)}</p>
+                        <p className={`mt-2 border-t border-border pt-1 font-medium ${c.etat === "depassee" ? "text-destructive" : "text-uk-blue"}`}>
+                          <span className="font-semibold">Alerte : </span>
+                          {libelleAlarme(c)}
+                        </p>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {c.statut === "actif" && c.etat === "depassee" && (
+                            <button
+                              type="button"
+                              onClick={() => setRegulariserId(c.id)}
+                              title="Reporter ou arrêter définitivement l'alerte"
+                              className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:brightness-110"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5" /> Régulariser
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setSelectedId(c.id)}
@@ -668,6 +694,7 @@ function Espace({ email }: { email: string }) {
           convention={selected}
           onClose={() => setSelectedId(null)}
           onChanged={load}
+          onRegulariser={() => setRegulariserId(selected.id)}
           onEdit={() => {
             setEditing(selected);
             setShowForm(true);
@@ -689,14 +716,23 @@ function Espace({ email }: { email: string }) {
       )}
 
       <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />
-      {resumeConnexion && (
+      {regulariserId && conventions.find((c) => c.id === regulariserId) && (
+        <RegulariserAlerte
+          convention={conventions.find((c) => c.id === regulariserId)!}
+          onClose={() => setRegulariserId(null)}
+          onDone={load}
+        />
+      )}
+      {resumeConnexion && !alarmeActiveId && !actives.some((c) => etatAlerte(c) === "sonnerie") && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setResumeConnexion(false)}>
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="font-heading text-lg font-bold text-uk-blue">Bienvenue — point de situation</h2>
             <p className="mt-1 text-xs text-muted-foreground">Synthèse du registre des conventions à votre connexion.</p>
             <ul className="mt-4 space-y-2 text-sm">
-              <li className="flex justify-between rounded-lg bg-rose-100 px-3 py-2 font-semibold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"><span>Urgences critiques (&lt; 60 j)</span><span>{resumeStats.urgence}</span></li>
-              <li className="flex justify-between rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"><span>Conventions en alerte</span><span>{resumeStats.alerte}</span></li>
+              <li className="flex justify-between rounded-lg bg-emerald-100 px-3 py-2 font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"><span>Conventions en vigueur</span><span>{resumeStats.enVigueur}</span></li>
+              <li className="flex justify-between rounded-lg bg-rose-100 px-3 py-2 font-semibold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"><span>Alertes dépassées sans action</span><span>{resumeStats.depassee}</span></li>
+              <li className="flex justify-between rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"><span>Alertes reportées</span><span>{resumeStats.reportee}</span></li>
+              <li className="flex justify-between rounded-lg bg-sky-100 px-3 py-2 font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"><span>Alertes arrêtées définitivement</span><span>{resumeStats.arretee}</span></li>
               <li className="flex justify-between rounded-lg bg-zinc-200 px-3 py-2 font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"><span>Conventions expirées</span><span>{resumeStats.expire}</span></li>
             </ul>
             <button type="button" onClick={() => setResumeConnexion(false)} className="mt-5 w-full rounded-lg bg-uk-blue px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110">J'ai compris</button>
