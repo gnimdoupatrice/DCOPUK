@@ -91,3 +91,8 @@ create policy "Personnel DCOP - suppression PDF" on storage.objects
 
 -- Seuil d'alerte personnalisé par convention (jours avant échéance). NULL = règle générale J-150.
 alter table public.conventions add column if not exists seuil_alerte_jours integer check (seuil_alerte_jours is null or seuil_alerte_jours >= 0);
+
+-- Alerte personnalisée (date + heure choisies par le Directeur) et préavis optionnel
+alter table public.conventions add column if not exists date_alerte date;
+alter table public.conventions alter column preavis_mois drop not null;
+alter table public.conventions alter column reconduction set default 'Non reconductible';

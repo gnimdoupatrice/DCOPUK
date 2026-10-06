@@ -6,7 +6,7 @@ import {
   PDF_MAX_OCTETS,
   STATUT_INFO,
   ajouterMois,
-  calculerStatut,
+  statutConvention,
   formatDate,
   joursRestants,
   type Convention,
@@ -56,7 +56,7 @@ export function ConventionDrawer({
   const [noteArchive, setNoteArchive] = useState("");
 
   const jours = joursRestants(c.date_echeance);
-  const statut = calculerStatut(c.date_echeance);
+  const statut = statutConvention(c);
   const nouvelleEcheance = ajouterMois(c.date_echeance, prolongation || 0);
 
   async function loadHistorique() {
@@ -223,7 +223,7 @@ export function ConventionDrawer({
             <Item label="Date d'échéance" value={formatDate(c.date_echeance)} />
             <Item
               label="Préavis de dénonciation"
-              value={`${c.preavis_mois} mois (avant le ${formatDate(ajouterMois(c.date_echeance, -c.preavis_mois) || c.date_echeance)})`}
+              value={c.preavis_mois == null ? "Non renseigné" : `${c.preavis_mois} mois (avant le ${formatDate(ajouterMois(c.date_echeance, -c.preavis_mois) || c.date_echeance)})`}
             />
             <Item label="Type de reconduction" value={c.reconduction} />
             <Item label="Enregistrée le" value={new Date(c.created_at).toLocaleDateString("fr-FR")} />
