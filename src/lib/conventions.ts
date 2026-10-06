@@ -281,7 +281,8 @@ export function momentAlerteConvention(c: Convention): Date | null {
     const j = String(d.getDate()).padStart(2, "0");
     dateAlerte = `${d.getFullYear()}-${m}-${j}`;
   } else {
-    dateAlerte = retirerMois(c.date_echeance, 5); // regle d'or : 5 mois, jour pour jour
+    dateAlerte = retirerMois(c.date_echeance, 5); // 
+    //  : 5 mois, jour pour jour
   }
 
   const [hStr, mStr] = (c.heure_alerte || "00:00").split(":");

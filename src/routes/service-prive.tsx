@@ -38,9 +38,12 @@ import {
   calculerEcheance,
   calculerStatut,
   dateLimitePreavis,
+  dureeEntreMois,
   formatDate,
   jouerSignalAlerte,
   joursRestants,
+  moisVersJours,
+  retirerMois,
   type Convention,
   type Statut,
   correspondCockpit,
@@ -749,12 +752,21 @@ function ConventionForm({
   const [pays, setPays] = useState(initial?.partenaire_pays ?? "");
   const [ville, setVille] = useState(initial?.partenaire_ville ?? "");
   const [thematique, setThematique] = useState(initial?.thematique ?? "");
+
+  // Dates et échéances
   const [signature, setSignature] = useState(initial?.date_signature ?? "");
-  const [duree, setDuree] = useState(initial?.duree_mois ?? 60);
+  const [dateEcheance, setDateEcheance] = useState(initial?.date_echeance ?? "");
+
+  // Paramétrage de l'alerte
+  const [moisAlerte, setMoisAlerte] = useState<string>(
+    initial?.seuil_alerte_jours != null
+      ? String(Math.max(1, Math.round(initial.seuil_alerte_jours / 30.44)))
+      : ""
+  );
+  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte || "00:00");
+
   const [preavis, setPreavis] = useState(initial?.preavis_mois ?? 3);
   const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Expresse");
-  const [seuilPerso, setSeuilPerso] = useState<string>(initial?.seuil_alerte_jours != null ? String(initial.seuil_alerte_jours) : "");
-  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte || "00:00");
   const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -762,13 +774,22 @@ function ConventionForm({
   const poleFinal = pole === "__new" ? nouveauPole.trim() : pole;
   const cadres = CADRES_PAR_POLE[poleFinal] ?? [];
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
-  const echeance = calculerEcheance(signature, duree);
-  const statut = echeance ? calculerStatut(echeance) : null;
+
+  const dureeCalculee = signature && dateEcheance ? dureeEntreMois(signature, dateEcheance) : 0;
+  const statut = dateEcheance ? calculerStatut(dateEcheance) : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!poleFinal || !cadreFinal) {
       setError("Veuillez renseigner le pôle et le cadre juridique.");
+      return;
+    }
+    if (!signature || !dateEcheance) {
+      setError("Veuillez renseigner la date de signature et la date de fin.");
+      return;
+    }
+    if (new Date(dateEcheance) <= new Date(signature)) {
+      setError("La date de fin doit être postérieure à la date de signature.");
       return;
     }
     if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
@@ -780,6 +801,12 @@ function ConventionForm({
     if (pole === "__new") {
       await supabase.from("poles").insert({ nom: poleFinal });
     }
+
+    const seuilJours =
+      moisAlerte.trim() === ""
+        ? null
+        : moisVersJours(dateEcheance, Math.max(1, Number(moisAlerte)));
+
     const payload = {
       pole: poleFinal,
       cadre_juridique: cadreFinal,
@@ -788,13 +815,14 @@ function ConventionForm({
       partenaire_ville: ville.trim() || null,
       thematique: thematique.trim() || null,
       date_signature: signature,
-      duree_mois: duree,
-      date_echeance: echeance,
+      duree_mois: Math.max(1, dureeCalculee),
+      date_echeance: dateEcheance,
       preavis_mois: preavis,
       reconduction,
-      seuil_alerte_jours: seuilPerso.trim() === "" ? null : Math.max(0, Number(seuilPerso)),
+      seuil_alerte_jours: seuilJours,
       heure_alerte: heureAlerte.trim() || "00:00",
     };
+
     const res = initial
       ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
       : await supabase.from("conventions").insert(payload).select("id").single();
@@ -872,15 +900,17 @@ function ConventionForm({
               <Field label="Thématique / domaine d'intervention" className="sm:col-span-3">
                 <input value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls} />
               </Field>
+
               <Field label="Date de signature *">
                 <input type="date" required value={signature} onChange={(e) => setSignature(e.target.value)} className={inputCls} />
               </Field>
-              <Field label="Durée (mois) *">
-                <input type="number" min={1} required value={duree} onChange={(e) => setDuree(Number(e.target.value))} className={inputCls} />
+              <Field label="Date de fin de l'accord (échéance) *">
+                <input type="date" required value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} className={inputCls} />
               </Field>
-              <Field label="Date d'échéance (calculée)">
-                <input readOnly value={echeance ? formatDate(echeance) : "—"} className={inputCls + " bg-muted"} />
+              <Field label="Durée (calculée)">
+                <input readOnly value={signature && dateEcheance ? `${dureeCalculee} mois` : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
               </Field>
+
               <Field label="Préavis de dénonciation (mois)">
                 <input type="number" min={0} value={preavis} onChange={(e) => setPreavis(Number(e.target.value))} className={inputCls} />
               </Field>
@@ -891,18 +921,32 @@ function ConventionForm({
                   <option>Non reconductible</option>
                 </select>
               </Field>
-              <Field label="Seuil d'alerte personnalisé (jours avant échéance)" className="sm:col-span-3">
-                <input type="number" min={0} value={seuilPerso} placeholder={`Vide = règle générale J-${SEUIL_ALERTE_JOURS}`} onChange={(e) => setSeuilPerso(e.target.value)} className={inputCls} />
+
+              <Field label="Alerte : délai avant échéance (en mois)" className="sm:col-span-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={moisAlerte}
+                  placeholder="Vide = règle générale : 5 mois avant échéance"
+                  onChange={(e) => setMoisAlerte(e.target.value)}
+                  className={inputCls}
+                />
               </Field>
-              <Field label="Heure précise de première sonnerie" className="sm:col-span-3">
-                <input type="time" value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
-                <span className="mt-1 block text-xs text-muted-foreground">Vide = 00:00 par défaut. Le 2e rappel sonnera à +8h.</span>
+              <Field label="Heure précise de sonnerie">
+                <input
+                  type="time"
+                  value={heureAlerte}
+                  onChange={(e) => setHeureAlerte(e.target.value)}
+                  className={inputCls}
+                />
               </Field>
-              {duree < 5 && (
-                <div className="sm:col-span-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                  <strong>Convention de courte durée ({duree} mois) :</strong> La durée totale étant inférieure à 5 mois, personnalisez le seuil en jours et l'heure ci-dessus pour définir précisément le moment de votre alerte.
+
+              {dureeCalculee > 0 && dureeCalculee < 5 && (
+                <div className="sm:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  <strong>Convention de courte durée ({dureeCalculee} mois) :</strong> la durée totale étant inférieure à la règle générale de 5 mois, précisez ci-dessus le délai en mois (ex. 1 ou 2 mois) et l'heure pour déclencher votre alerte.
                 </div>
               )}
+
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
               </Field>
