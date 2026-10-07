@@ -6,6 +6,7 @@ import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
+  Clock,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
