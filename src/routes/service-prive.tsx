@@ -6,6 +6,7 @@ import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
+  Clock,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -194,6 +195,8 @@ function Espace({ email }: { email: string }) {
   const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
   const [resumeConnexion, setResumeConnexion] = useState(false);
   const [regulariserId, setRegulariserId] = useState<string | null>(null);
+  const [modifierReportId, setModifierReportId] = useState<string | null>(null);
+  const [alertesEnAttente, setAlertesEnAttente] = useState(true);
   const resumeStats = useMemo(() => {
     const actives = conventions.filter((c) => !c.archived);
     return {
@@ -627,6 +630,20 @@ function Espace({ email }: { email: string }) {
                         <p className={`mt-2 border-t border-border pt-1 font-medium ${c.etat === "depassee" ? "text-destructive" : "text-uk-blue"}`}>
                           <span className="font-semibold">Alerte : </span>
                           {libelleAlarme(c)}
+                          {c.statut === "actif" && c.etat === "reportee" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setModifierReportId(c.id);
+                              }}
+                              title="Modifier ou prolonger le report"
+                              aria-label="Modifier ou prolonger le report"
+                              className="ml-1 inline-flex align-middle rounded p-0.5 text-uk-orange hover:bg-uk-orange/15"
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </p>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
@@ -715,7 +732,15 @@ function Espace({ email }: { email: string }) {
         />
       )}
 
-      <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />
+      <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} onPendingChange={setAlertesEnAttente} />
+      {modifierReportId && conventions.find((c) => c.id === modifierReportId) && (
+        <RegulariserAlerte
+          modifierReport
+          convention={conventions.find((c) => c.id === modifierReportId)!}
+          onClose={() => setModifierReportId(null)}
+          onDone={load}
+        />
+      )}
       {regulariserId && conventions.find((c) => c.id === regulariserId) && (
         <RegulariserAlerte
           convention={conventions.find((c) => c.id === regulariserId)!}
@@ -723,7 +748,7 @@ function Espace({ email }: { email: string }) {
           onDone={load}
         />
       )}
-      {resumeConnexion && !alarmeActiveId && !actives.some((c) => etatAlerte(c) === "sonnerie") && (
+      {resumeConnexion && !alertesEnAttente && !alarmeActiveId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setResumeConnexion(false)}>
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="font-heading text-lg font-bold text-uk-blue">Bienvenue — point de situation</h2>

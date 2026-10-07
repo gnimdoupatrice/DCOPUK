@@ -100,16 +100,27 @@ export function CriticalAlarm({
   conventions,
   onRefresh,
   onActiveChange,
+  onPendingChange,
 }: {
   conventions: Convention[];
   onRefresh?: () => void;
   onActiveChange?: (id: string | null) => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   // Surcharges locales immédiates (report / arrêt) en attendant le rechargement du registre
   const [overrides, setOverrides] = useState<
     Record<string, { reportee?: string | null; arretee?: string | null }>
   >({});
   const dejaSonne = useRef<Set<string>>(new Set());
+  // Alertes « dépassées sans action » relevées à la connexion : rattrapage sonore prioritaire
+  const rattrapage = useRef<Set<string> | null>(null);
+  if (rattrapage.current === null && conventions.length > 0) {
+    rattrapage.current = new Set(
+      conventions
+        .filter((c) => !c.archived && joursRestants(c.date_echeance) >= 0 && etatAlerte(c) === "depassee")
+        .map((c) => c.id),
+    );
+  }
   const [tick, setTick] = useState(0);
   const [activeConvention, setActiveConvention] = useState<Convention | null>(null);
   const [isRinging, setIsRinging] = useState(false);
@@ -124,9 +135,10 @@ export function CriticalAlarm({
   }, []);
 
   // Détection de la convention dont l'alarme doit sonner maintenant
-  const conventionDeclenchee = useMemo(() => {
-    const now = new Date();
-
+  // File d'attente : alertes qui sonnent maintenant + rattrapage, la plus ancienne d'abord
+  const file = useMemo(() => {
+    const now = Date.now();
+    const out: { convention: Convention; key: string; ref: number }[] = [];
     for (const brut of conventions) {
       const o = overrides[brut.id];
       const c: Convention = o
@@ -136,25 +148,30 @@ export function CriticalAlarm({
             ...(o.arretee !== undefined ? { alarme_arretee_le: o.arretee } : {}),
           }
         : brut;
-      if (c.archived) continue;
-      const j = joursRestants(c.date_echeance);
-      if (j < 0) continue; // expirée ignorée
-
-      // 1. Si déjà arrêtée définitivement par le Directeur -> aucune alarme
-      if (c.alarme_arretee_le) continue;
-
-      // 2. Moment de référence : report éventuel, sinon heure H programmée
+      if (c.archived || joursRestants(c.date_echeance) < 0) continue;
       const ref = momentReferenceAlerte(c);
       if (!ref) continue;
-      if (etatAlerte(c, now.getTime()) !== "sonnerie") continue; // aucun son rétroactif
-      const diff = now.getTime() - ref.getTime();
-      const type = diff < 3600_000 ? ("premiere" as const) : ("deuxieme" as const);
-      const key = `${c.id}|${type}|${ref.getTime()}`;
-      if (!dejaSonne.current.has(key)) return { convention: c, type, key };
+      const etat = etatAlerte(c, now);
+      if (etat === "sonnerie") {
+        const type = now - ref.getTime() < 3600_000 ? "premiere" : "deuxieme";
+        out.push({ convention: c, key: `${c.id}|${type}|${ref.getTime()}`, ref: ref.getTime() });
+      } else if (etat === "depassee" && rattrapage.current?.has(c.id)) {
+        out.push({ convention: c, key: `${c.id}|rattrapage|${ref.getTime()}`, ref: ref.getTime() });
+      }
     }
-    return null;
+    return out.sort((x, y) => x.ref - y.ref);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventions, tick, overrides]);
+
+  const conventionDeclenchee = useMemo(
+    () => file.find((f) => !dejaSonne.current.has(f.key)) ?? null,
+    [file],
+  );
+
+  useEffect(() => {
+    onPendingChange?.(file.length > 0 || !!activeConvention);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, activeConvention]);
 
   useEffect(() => {
     if (!conventionDeclenchee) return;
