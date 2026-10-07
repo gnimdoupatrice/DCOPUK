@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ServicePriveRouteImport } from './routes/service-prive'
+import { Route as ApiPublicAlertesEmailRouteImport } from './routes/api/public/alertes-email'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const ServicePriveRoute = ServicePriveRouteImport.update({
   path: '/service-prive',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAlertesEmailRoute = ApiPublicAlertesEmailRouteImport.update({
+  id: '/api/public/alertes-email',
+  path: '/api/public/alertes-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/service-prive': typeof ServicePriveRoute
+  '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/service-prive': typeof ServicePriveRoute
+  '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/service-prive': typeof ServicePriveRoute
+  '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/service-prive'
+  fullPaths: '/' | '/service-prive' | '/api/public/alertes-email'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/service-prive'
-  id: '__root__' | '/' | '/service-prive'
+  to: '/' | '/service-prive' | '/api/public/alertes-email'
+  id: '__root__' | '/' | '/service-prive' | '/api/public/alertes-email'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ServicePriveRoute: typeof ServicePriveRoute
+  ApiPublicAlertesEmailRoute: typeof ApiPublicAlertesEmailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicePriveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/alertes-email': {
+      id: '/api/public/alertes-email'
+      path: '/api/public/alertes-email'
+      fullPath: '/api/public/alertes-email'
+      preLoaderRoute: typeof ApiPublicAlertesEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ServicePriveRoute: ServicePriveRoute,
+  ApiPublicAlertesEmailRoute: ApiPublicAlertesEmailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
