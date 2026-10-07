@@ -96,3 +96,26 @@ alter table public.conventions add column if not exists seuil_alerte_jours integ
 alter table public.conventions add column if not exists date_alerte date;
 alter table public.conventions alter column preavis_mois drop not null;
 alter table public.conventions alter column reconduction set default 'Non reconductible';
+
+-- ============================================================
+-- E-mails d'alerte automatiques (Resend) — à exécuter une fois
+-- Remplacez VOTRE_MOT_DE_PASSE_INTERNE par la valeur saisie dans Lovable (ALERTES_CRON_SECRET).
+-- ============================================================
+alter table public.conventions add column if not exists email_alerte_envoye_pour text;
+alter table public.conventions add column if not exists email_report_envoye_pour text;
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.unschedule('dcop-alertes-email') where exists (select 1 from cron.job where jobname = 'dcop-alertes-email');
+select cron.schedule(
+  'dcop-alertes-email',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://project--7eb6cace-f9ed-445f-b672-417678d1f7ee.lovable.app/api/public/alertes-email',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer VOTRE_MOT_DE_PASSE_INTERNE"}'::jsonb,
+    body := '{}'::jsonb
+  );
+  $$
+);
