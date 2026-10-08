@@ -97,9 +97,13 @@ export function RegulariserAlerte({
             <input
               type="datetime-local"
               value={cible}
+              min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               onChange={(e) => setCible(e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
             />
+            {cible && new Date(cible).getTime() <= Date.now() && (
+              <p className="text-xs font-medium text-destructive">Veuillez choisir une date et une heure futures.</p>
+            )}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setMode("choix")} className="rounded-lg border border-input px-3 py-2 text-xs font-medium hover:bg-muted">
                 Retour

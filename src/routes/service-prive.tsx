@@ -418,10 +418,9 @@ function Espace({ email }: { email: string }) {
         {/* Cockpit */}
         <section>
           <h2 className="mb-4 text-lg font-bold text-uk-blue">Cockpit de synthèse</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
             <Kpi icon={FileSignature} label="En vigueur" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
-            <Kpi icon={AlertTriangle} label="Alertes dépassées sans action" value={stats.depassee} tone="text-destructive" active={fCockpit === "depassee"} onClick={() => filtrerCockpit("depassee")} />
             <Kpi icon={AlertTriangle} label="Alertes reportées" value={stats.reportee} tone="text-uk-orange" active={fCockpit === "reportee"} onClick={() => filtrerCockpit("reportee")} />
             <Kpi icon={Layers} label="Alertes arrêtées définitivement" value={stats.arretee} tone="text-uk-blue" active={fCockpit === "arretee"} onClick={() => filtrerCockpit("arretee")} />
             <Kpi icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
@@ -509,7 +508,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "En vigueur", depassee: "Alertes dépassées sans action", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "En vigueur", depassee: "Alertes en attente", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
@@ -730,7 +729,6 @@ function Espace({ email }: { email: string }) {
             <p className="mt-1 text-xs text-muted-foreground">Synthèse du registre des conventions à votre connexion.</p>
             <ul className="mt-4 space-y-2 text-sm">
               <li className="flex justify-between rounded-lg bg-emerald-100 px-3 py-2 font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"><span>Conventions en vigueur</span><span>{resumeStats.enVigueur}</span></li>
-              <li className="flex justify-between rounded-lg bg-rose-100 px-3 py-2 font-semibold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"><span>Alertes dépassées sans action</span><span>{resumeStats.depassee}</span></li>
               <li className="flex justify-between rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"><span>Alertes reportées</span><span>{resumeStats.reportee}</span></li>
               <li className="flex justify-between rounded-lg bg-sky-100 px-3 py-2 font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"><span>Alertes arrêtées définitivement</span><span>{resumeStats.arretee}</span></li>
               <li className="flex justify-between rounded-lg bg-zinc-200 px-3 py-2 font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"><span>Conventions expirées</span><span>{resumeStats.expire}</span></li>

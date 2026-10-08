@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BellRing, Clock, CheckCircle } from "lucide-react";
+import { BellRing, Clock, CheckCircle, Volume2 } from "lucide-react";
 import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
 import {
   type Convention,
@@ -126,8 +126,14 @@ export function CriticalAlarm({
   // Détection de la convention dont l'alarme doit sonner maintenant
   const conventionDeclenchee = useMemo(() => {
     const now = new Date();
+    // File d'attente : la plus ancienne alerte en attente d'abord
+    const ordonnees = [...conventions].sort((a, b) => {
+      const ra = momentReferenceAlerte(a)?.getTime() ?? Infinity;
+      const rb = momentReferenceAlerte(b)?.getTime() ?? Infinity;
+      return ra - rb;
+    });
 
-    for (const brut of conventions) {
+    for (const brut of ordonnees) {
       const o = overrides[brut.id];
       const c: Convention = o
         ? {
@@ -146,11 +152,9 @@ export function CriticalAlarm({
       // 2. Moment de référence : report éventuel, sinon heure H programmée
       const ref = momentReferenceAlerte(c);
       if (!ref) continue;
-      if (etatAlerte(c, now.getTime()) !== "sonnerie") continue; // aucun son rétroactif
-      const diff = now.getTime() - ref.getTime();
-      const type = diff < 3600_000 ? ("premiere" as const) : ("deuxieme" as const);
-      const key = `${c.id}|${type}|${ref.getTime()}`;
-      if (!dejaSonne.current.has(key)) return { convention: c, type, key };
+      if (etatAlerte(c, now.getTime()) !== "sonnerie") continue;
+      const key = `${c.id}|${ref.getTime()}`;
+      if (!dejaSonne.current.has(key)) return { convention: c, key };
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,6 +219,7 @@ export function CriticalAlarm({
   // Report de l'alarme à une date et heure choisie
   async function validerReport() {
     if (!activeConvention || !snoozeDateTime) return;
+    if (new Date(snoozeDateTime).getTime() <= Date.now()) return;
     couperSon();
     const targetIso = new Date(snoozeDateTime).toISOString();
     const id = activeConvention.id;
@@ -238,13 +243,22 @@ export function CriticalAlarm({
           <div className="flex items-center gap-2">
             <BellRing className={`h-6 w-6 shrink-0 ${isRinging ? "animate-bounce" : ""}`} />
             <div>
-              <p className="font-bold">ALERTE CONVENTION — HEURE PROGRAMMÉE</p>
+              <p className="font-bold">ALERTE CONVENTION — ALERTE EN ATTENTE D'ARBITRAGE</p>
               <p className="text-xs opacity-90">Heure de consigne : {heureAffichee}</p>
             </div>
           </div>
         </div>
 
         <div className="space-y-4 p-5 text-sm text-foreground">
+          {isRinging && (
+            <button
+              type="button"
+              onClick={() => sirene.current?.resume()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive"
+            >
+              <Volume2 className="h-4 w-4 animate-pulse" /> Alerte sonore active — cliquez ici si vous n'entendez rien
+            </button>
+          )}
           <div className="rounded-xl border border-border bg-muted/60 p-4">
             <p className="text-base font-bold text-uk-blue">{activeConvention.partenaire_nom}</p>
             <p className="text-xs text-muted-foreground">
@@ -285,12 +299,14 @@ export function CriticalAlarm({
                 <input
                   type="datetime-local"
                   value={snoozeDateTime}
+                  min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                   onChange={(e) => setSnoozeDateTime(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-uk-blue focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={validerReport}
+                  disabled={!snoozeDateTime || new Date(snoozeDateTime).getTime() <= Date.now()}
                   className="rounded-lg bg-uk-blue px-4 py-2 text-xs font-semibold text-white shadow hover:brightness-110"
                 >
                   Confirmer le report
@@ -303,6 +319,9 @@ export function CriticalAlarm({
                   Annuler
                 </button>
               </div>
+              {snoozeDateTime && new Date(snoozeDateTime).getTime() <= Date.now() && (
+                <p className="text-xs font-medium text-destructive">Veuillez choisir une date et une heure futures.</p>
+              )}
             </div>
           )}
         </div>
