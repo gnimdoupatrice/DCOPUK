@@ -508,7 +508,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "En vigueur", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "En vigueur", depassee: "Alertes en attente", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
