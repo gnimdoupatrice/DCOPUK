@@ -199,7 +199,7 @@ export function CriticalAlarm({
     setIsRinging(false);
   }
 
-  // Arrêt définitif de l'alarme pour cette convention is ok
+  // Arrêt définitif de l'alarme pour  CETTE CONVENTION is ok
   async function arreterDefinitivement() {
     if (!activeConvention) return;
     couperSon();
