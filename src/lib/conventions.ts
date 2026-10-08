@@ -127,8 +127,6 @@ export type Statut = "actif" | "expire";
 /** État de l'alerte d'une convention en vigueur. */
 export type EtatAlerte = "aucune" | "programmee" | "sonnerie" | "reportee" | "arretee" | "depassee";
 
-const H1 = 3600_000;
-const H8 = 8 * H1;
 
 export function calculerEcheance(dateSignature: string, dureeMois: number): string {
   if (!dateSignature || !dureeMois) return "";
