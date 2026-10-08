@@ -179,6 +179,7 @@ function Espace({ email }: { email: string }) {
   const [fStatut, setFStatut] = useState<"" | Statut>("");
   const [fCockpit, setFCockpit] = useState<FiltreCockpit>("");
   const registreRef = useRef<HTMLElement | null>(null);
+
   function filtrerCockpit(f: FiltreCockpit) {
     setFCockpit(f);
     setFStatut("");
@@ -194,6 +195,7 @@ function Espace({ email }: { email: string }) {
   const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
   const [resumeConnexion, setResumeConnexion] = useState(false);
   const [regulariserId, setRegulariserId] = useState<string | null>(null);
+
   const resumeStats = useMemo(() => {
     const actives = conventions.filter((c) => !c.archived);
     return {
@@ -238,7 +240,6 @@ function Espace({ email }: { email: string }) {
 
   useEffect(() => {
     load();
-    // Rafraîchissement silencieux du registre toutes les 60 s
     const id = window.setInterval(async () => {
       const { data, error } = await supabase.from("conventions").select("*");
       if (!error && data) setConventions(data as Convention[]);
@@ -250,7 +251,10 @@ function Espace({ email }: { email: string }) {
   const selected = conventions.find((c) => c.id === selectedId) ?? null;
 
   async function supprimerDirect(id: string, nom: string, pdfPath?: string | null) {
-    if (!window.confirm(`Supprimer définitivement la convention avec « ${nom} » ?`)) return;
+    const saisie = window.prompt(
+      `Suppression définitive de la convention avec « ${nom} » et de son document PDF.\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`,
+    );
+    if (saisie?.trim().toUpperCase() !== "SUPPRIMER") return;
     try {
       if (pdfPath) {
         await supabase.storage.from("conventions-pdf").remove([pdfPath]);
@@ -375,7 +379,6 @@ function Espace({ email }: { email: string }) {
       ].join(";")
     );
 
-    // BOM UTF-8 pour préserver les accents dans Excel
     const csvContent = "\uFEFF" + [headers.join(";"), ...lines].join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -445,8 +448,6 @@ function Espace({ email }: { email: string }) {
               {showArchived ? "Conventions clôturées / archivées" : "Registre des conventions"}
             </h2>
             <div className="flex flex-wrap items-center gap-2">
-
-
               <button
                 type="button"
                 onClick={exporterCsv}
@@ -803,7 +804,7 @@ function ConventionForm({
 
   // Paramétrage de l'alerte
   const [dateAlerte, setDateAlerte] = useState<string>(initial?.date_alerte ?? "");
-  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte ?? "");
+  const [heureAlerte, setHeureAlerte] = useState<string>(initial?.heure_alerte ?? "08:00");
 
   const [preavis, setPreavis] = useState<string>(initial?.preavis_mois != null ? String(initial.preavis_mois) : "");
   const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Non reconductible");
@@ -819,10 +820,19 @@ function ConventionForm({
   const momentAlerte = dateAlerte && heureAlerte ? momentAlerteConvention({ date_alerte: dateAlerte, heure_alerte: heureAlerte } as Convention) : null;
   const statut = dateEcheance ? calculerStatut(dateEcheance, momentAlerte) : null;
 
+  function appliquerDuree(mois: number) {
+    if (!signature) return;
+    setDateEcheance(ajouterMois(signature, mois));
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!poleFinal || !cadreFinal) {
       setError("Veuillez renseigner le pôle et le cadre juridique.");
+      return;
+    }
+    if (!nom.trim() || !pays.trim()) {
+      setError("Veuillez renseigner le nom du partenaire et le pays.");
       return;
     }
     if (!signature || !dateEcheance) {
@@ -830,11 +840,19 @@ function ConventionForm({
       return;
     }
     if (new Date(dateEcheance) <= new Date(signature)) {
-      setError("La date de fin doit être postérieure à la date de signature.");
+      setError("La date de fin doit être strictement postérieure à la date de signature.");
       return;
     }
     if (!dateAlerte || !heureAlerte) {
       setError("Veuillez renseigner la date et l'heure de l'alerte.");
+      return;
+    }
+    if (dateAlerte > dateEcheance) {
+      setError("La date de l'alerte doit précéder ou égaler la date d'échéance de l'accord.");
+      return;
+    }
+    if (dateAlerte < signature) {
+      setError("La date de l'alerte ne peut pas être antérieure à la date de signature.");
       return;
     }
     if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
@@ -845,6 +863,7 @@ function ConventionForm({
       setError("Le document doit être un PDF de 20 Mo maximum.");
       return;
     }
+
     setBusy(true);
     setError(null);
     if (pole === "__new") {
@@ -947,17 +966,68 @@ function ConventionForm({
               </Field>
 
               <Field label="Date de signature *">
-                <input type="date" required value={signature} onChange={(e) => setSignature(e.target.value)} className={inputCls} />
+                <input
+                  type="date"
+                  required
+                  value={signature}
+                  onChange={(e) => {
+                    const s = e.target.value;
+                    setSignature(s);
+                    if (s && dureeCalculee > 0) {
+                      setDateEcheance(ajouterMois(s, dureeCalculee));
+                    }
+                  }}
+                  className={inputCls}
+                />
               </Field>
               <Field label="Date de fin de l'accord (échéance) *">
-                <input type="date" required value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} className={inputCls} />
+                <input
+                  type="date"
+                  required
+                  min={signature || undefined}
+                  value={dateEcheance}
+                  onChange={(e) => setDateEcheance(e.target.value)}
+                  className={inputCls}
+                />
               </Field>
               <Field label="Durée (calculée)">
-                <input readOnly value={signature && dateEcheance ? `${dureeCalculee} mois` : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
+                <input
+                  readOnly
+                  value={signature && dateEcheance ? `${dureeCalculee} mois` : "—"}
+                  className={inputCls + " bg-muted font-medium text-uk-blue"}
+                />
               </Field>
 
+              {/* Raccourcis durées fréquentes */}
+              <div className="sm:col-span-3 -mt-1 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Durées fréquentes :</span>
+                {[
+                  { label: "1 an (12 m)", mois: 12 },
+                  { label: "2 ans (24 m)", mois: 24 },
+                  { label: "3 ans (36 m)", mois: 36 },
+                  { label: "5 ans (60 m)", mois: 60 },
+                ].map((d) => (
+                  <button
+                    key={d.mois}
+                    type="button"
+                    disabled={!signature}
+                    onClick={() => appliquerDuree(d.mois)}
+                    className="rounded border border-border bg-muted px-2 py-0.5 text-xs text-foreground hover:bg-border disabled:opacity-40"
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+
               <Field label="Préavis de dénonciation (mois, optionnel)">
-                <input type="number" min={0} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls} />
+                <input
+                  type="number"
+                  min={0}
+                  value={preavis}
+                  placeholder="Optionnel"
+                  onChange={(e) => setPreavis(e.target.value)}
+                  className={inputCls}
+                />
               </Field>
               <Field label="Reconduction" className="sm:col-span-2">
                 <select value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls}>
@@ -967,12 +1037,68 @@ function ConventionForm({
                 </select>
               </Field>
 
-              <Field label="Date de l'alerte *" className="sm:col-span-2">
-                <input type="date" required value={dateAlerte} onChange={(e) => setDateAlerte(e.target.value)} className={inputCls} />
-              </Field>
-              <Field label="Heure de l'alerte *">
-                <input type="time" required value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
-              </Field>
+              {/* Paramétrage guidé de l'alerte   OK OK OK OK OK OK OK */}
+              <div className="sm:col-span-3 rounded-lg border border-border bg-muted/50 p-3">
+                <p className="text-xs font-semibold text-uk-blue">Programmation de l'alerte de fin d'accord</p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground">Raccourcis par rapport à l'échéance :</span>
+                  {preavis && Number(preavis) > 0 && dateEcheance && (
+                    <button
+                      type="button"
+                      onClick={() => setDateAlerte(ajouterMois(dateEcheance, -Number(preavis)))}
+                      className="rounded border border-uk-orange/40 bg-uk-orange/10 px-2 py-0.5 text-xs font-semibold text-uk-orange hover:bg-uk-orange/20"
+                    >
+                      Au préavis ({preavis} mois)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!dateEcheance}
+                    onClick={() => setDateAlerte(ajouterMois(dateEcheance, -6))}
+                    className="rounded border border-border bg-card px-2 py-0.5 text-xs hover:bg-muted disabled:opacity-40"
+                  >
+                    6 mois avant
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!dateEcheance}
+                    onClick={() => setDateAlerte(ajouterMois(dateEcheance, -3))}
+                    className="rounded border border-uk-blue/30 bg-uk-blue/10 px-2 py-0.5 text-xs font-semibold text-uk-blue hover:bg-uk-blue/20 disabled:opacity-40"
+                  >
+                    3 mois avant (recommandé)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!dateEcheance}
+                    onClick={() => setDateAlerte(ajouterMois(dateEcheance, -1))}
+                    className="rounded border border-border bg-card px-2 py-0.5 text-xs hover:bg-muted disabled:opacity-40"
+                  >
+                    1 mois avant
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Date de l'alerte *">
+                    <input
+                      type="date"
+                      required
+                      max={dateEcheance || undefined}
+                      value={dateAlerte}
+                      onChange={(e) => setDateAlerte(e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Heure de l'alerte *">
+                    <input
+                      type="time"
+                      required
+                      value={heureAlerte}
+                      onChange={(e) => setHeureAlerte(e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+              </div>
 
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />

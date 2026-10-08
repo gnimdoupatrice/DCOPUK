@@ -54,16 +54,27 @@ export function ConventionDrawer({
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // avenant
+
+  // Avenant
   const [prolongation, setProlongation] = useState(12);
   const [noteAvenant, setNoteAvenant] = useState("");
-  // archive
+  const nouvelleEcheance = ajouterMois(c.date_echeance, prolongation || 0);
+  const [avDateAlerte, setAvDateAlerte] = useState("");
+  const [avHeureAlerte, setAvHeureAlerte] = useState("08:00");
+
+  // Archive
   const [noteArchive, setNoteArchive] = useState("");
 
   const jours = joursRestants(c.date_echeance);
   const statut = statutConvention(c);
   const etat = etatAlerte(c);
-  const nouvelleEcheance = ajouterMois(c.date_echeance, prolongation || 0);
+
+  useEffect(() => {
+    // Proposition automatique : 3 mois avant la nouvelle échéance
+    if (nouvelleEcheance) {
+      setAvDateAlerte(ajouterMois(nouvelleEcheance, -3));
+    }
+  }, [nouvelleEcheance]);
 
   async function loadHistorique() {
     const { data } = await supabase
@@ -97,14 +108,27 @@ export function ConventionDrawer({
     e.preventDefault();
     run(async () => {
       if (!prolongation || prolongation < 1) return "Indiquez une prolongation d'au moins 1 mois.";
+      if (!avDateAlerte || !avHeureAlerte) return "Programmez la nouvelle alerte (date et heure) pour la nouvelle échéance.";
+      const m = new Date(`${avDateAlerte}T${avHeureAlerte}`);
+      if (m.getTime() <= Date.now()) return "La nouvelle alerte doit être fixée dans le futur.";
+      if (avDateAlerte > nouvelleEcheance) return "La nouvelle alerte doit précéder ou égaler la nouvelle date d'échéance.";
+
       const { error } = await supabase
         .from("conventions")
-        .update({ duree_mois: c.duree_mois + prolongation, date_echeance: nouvelleEcheance })
+        .update({
+          duree_mois: c.duree_mois + prolongation,
+          date_echeance: nouvelleEcheance,
+          date_alerte: avDateAlerte,
+          heure_alerte: avHeureAlerte,
+          alarme_arretee_le: null,
+          alarme_reportee_jusqu_a: null,
+        })
         .eq("id", c.id);
       if (error) return error.message;
+
       await logHistorique(
         c.id,
-        `Reconduction / avenant : +${prolongation} mois (échéance ${formatDate(c.date_echeance)} → ${formatDate(nouvelleEcheance)})`,
+        `Reconduction / avenant : +${prolongation} mois (échéance ${formatDate(c.date_echeance)} → ${formatDate(nouvelleEcheance)}) — nouvelle alerte le ${formatDate(avDateAlerte)} à ${avHeureAlerte}`,
         noteAvenant.trim(),
       );
       setNoteAvenant("");
@@ -139,7 +163,10 @@ export function ConventionDrawer({
   }
 
   async function supprimer() {
-    if (!window.confirm(`Supprimer définitivement la convention avec « ${c.partenaire_nom} » ?`)) return;
+    const saisie = window.prompt(
+      `Suppression définitive de la convention avec « ${c.partenaire_nom} » et de son document PDF.\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`,
+    );
+    if (saisie?.trim().toUpperCase() !== "SUPPRIMER") return;
     setBusy(true);
     if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
     const { error } = await supabase.from("conventions").delete().eq("id", c.id);
@@ -275,7 +302,7 @@ export function ConventionDrawer({
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions du Directeur */}
           <div>
             <p className="mb-2 text-sm font-semibold text-foreground">Actions du Directeur</p>
             <div className="grid grid-cols-2 gap-2">
@@ -291,20 +318,108 @@ export function ConventionDrawer({
 
             {panel === "avenant" && (
               <form onSubmit={avenant} className="mt-3 space-y-3 rounded-xl bg-muted p-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Prolongation (mois) *
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      value={prolongation}
+                      onChange={(e) => setProlongation(Math.max(1, Number(e.target.value)))}
+                      className={inputCls}
+                    />
+                  </label>
+                  <div>
+                    <span className="block text-xs font-medium text-muted-foreground">Nouvelle date d'échéance</span>
+                    <p className="mt-2 text-sm font-bold text-uk-blue">
+                      {nouvelleEcheance ? formatDate(nouvelleEcheance) : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <p className="text-xs font-bold text-uk-blue">
+                    Nouvelle alerte obligatoire pour cette reconduction
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Raccourcis calculés avant la nouvelle échéance :
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => nouvelleEcheance && setAvDateAlerte(ajouterMois(nouvelleEcheance, -6))}
+                      className="rounded border border-border bg-muted px-2 py-1 text-xs hover:bg-border"
+                    >
+                      6 mois avant
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => nouvelleEcheance && setAvDateAlerte(ajouterMois(nouvelleEcheance, -3))}
+                      className="rounded border border-uk-blue/30 bg-uk-blue/10 px-2 py-1 text-xs font-semibold text-uk-blue hover:bg-uk-blue/20"
+                    >
+                      3 mois avant (recommandé)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => nouvelleEcheance && setAvDateAlerte(ajouterMois(nouvelleEcheance, -1))}
+                      className="rounded border border-border bg-muted px-2 py-1 text-xs hover:bg-border"
+                    >
+                      1 mois avant
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Date de l'alerte *
+                      <input
+                        type="date"
+                        required
+                        max={nouvelleEcheance}
+                        value={avDateAlerte}
+                        onChange={(e) => setAvDateAlerte(e.target.value)}
+                        className={inputCls}
+                      />
+                    </label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Heure de l'alerte *
+                      <input
+                        type="time"
+                        required
+                        value={avHeureAlerte}
+                        onChange={(e) => setAvHeureAlerte(e.target.value)}
+                        className={inputCls}
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <label className="block text-xs font-medium text-muted-foreground">
-                  Prolongation (mois)
-                  <input type="number" min={1} value={prolongation} onChange={(e) => setProlongation(Number(e.target.value))} className={inputCls} />
+                  Note sur l'avenant (motif, références du document)
+                  <textarea
+                    maxLength={1000}
+                    rows={3}
+                    value={noteAvenant}
+                    onChange={(e) => setNoteAvenant(e.target.value)}
+                    placeholder="Ex. : Avenant n°1 signé le 12/03/2026 prolongeant les activités d'un an."
+                    className={inputCls}
+                  />
                 </label>
-                <p className="text-sm">
-                  Nouvelle échéance : <strong>{nouvelleEcheance ? formatDate(nouvelleEcheance) : "—"}</strong>
-                </p>
-                <label className="block text-xs font-medium text-muted-foreground">
-                  Note sur l'avenant
-                  <textarea maxLength={1000} rows={3} value={noteAvenant} onChange={(e) => setNoteAvenant(e.target.value)} className={inputCls} />
-                </label>
-                <button disabled={busy} className="rounded-md bg-uk-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  Enregistrer l'avenant
-                </button>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPanel(null)}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-card"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    disabled={busy}
+                    className="rounded-md bg-uk-green px-4 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                  >
+                    {busy ? "Enregistrement…" : "Valider l'avenant"}
+                  </button>
+                </div>
               </form>
             )}
 
@@ -314,9 +429,18 @@ export function ConventionDrawer({
                   Motif de clôture
                   <textarea maxLength={1000} rows={3} value={noteArchive} onChange={(e) => setNoteArchive(e.target.value)} className={inputCls} />
                 </label>
-                <button disabled={busy} className="rounded-md bg-uk-orange px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  Confirmer la clôture
-                </button>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPanel(null)}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-card"
+                  >
+                    Annuler
+                  </button>
+                  <button disabled={busy} className="rounded-md bg-uk-orange px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    Confirmer la clôture
+                  </button>
+                </div>
               </form>
             )}
             {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
