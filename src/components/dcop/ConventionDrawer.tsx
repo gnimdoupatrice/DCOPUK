@@ -64,6 +64,12 @@ export function ConventionDrawer({
   const statut = statutConvention(c);
   const etat = etatAlerte(c);
   const nouvelleEcheance = ajouterMois(c.date_echeance, prolongation || 0);
+  const [avDateAlerte, setAvDateAlerte] = useState("");
+  const [avHeureAlerte, setAvHeureAlerte] = useState("08:00");
+  useEffect(() => {
+    // Proposition par défaut : 3 mois avant la nouvelle échéance
+    if (nouvelleEcheance) setAvDateAlerte(ajouterMois(nouvelleEcheance, -3));
+  }, [nouvelleEcheance]);
 
   async function loadHistorique() {
     const { data } = await supabase
@@ -97,14 +103,25 @@ export function ConventionDrawer({
     e.preventDefault();
     run(async () => {
       if (!prolongation || prolongation < 1) return "Indiquez une prolongation d'au moins 1 mois.";
+      if (!avDateAlerte || !avHeureAlerte) return "Programmez la nouvelle alerte (date et heure) pour la nouvelle échéance.";
+      const m = new Date(`${avDateAlerte}T${avHeureAlerte}`);
+      if (m.getTime() <= Date.now()) return "La nouvelle alerte doit être dans le futur.";
+      if (avDateAlerte > nouvelleEcheance) return "La nouvelle alerte doit précéder la nouvelle échéance.";
       const { error } = await supabase
         .from("conventions")
-        .update({ duree_mois: c.duree_mois + prolongation, date_echeance: nouvelleEcheance })
+        .update({
+          duree_mois: c.duree_mois + prolongation,
+          date_echeance: nouvelleEcheance,
+          date_alerte: avDateAlerte,
+          heure_alerte: avHeureAlerte,
+          alarme_arretee_le: null,
+          alarme_reportee_jusqu_a: null,
+        })
         .eq("id", c.id);
       if (error) return error.message;
       await logHistorique(
         c.id,
-        `Reconduction / avenant : +${prolongation} mois (échéance ${formatDate(c.date_echeance)} → ${formatDate(nouvelleEcheance)})`,
+        `Reconduction / avenant : +${prolongation} mois (échéance ${formatDate(c.date_echeance)} → ${formatDate(nouvelleEcheance)}) — nouvelle alerte le ${formatDate(avDateAlerte)} à ${avHeureAlerte}`,
         noteAvenant.trim(),
       );
       setNoteAvenant("");
