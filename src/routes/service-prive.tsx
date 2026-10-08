@@ -250,7 +250,10 @@ function Espace({ email }: { email: string }) {
   const selected = conventions.find((c) => c.id === selectedId) ?? null;
 
   async function supprimerDirect(id: string, nom: string, pdfPath?: string | null) {
-    if (!window.confirm(`Supprimer définitivement la convention avec « ${nom} » ?`)) return;
+    const saisie = window.prompt(
+      `Suppression définitive de la convention avec « ${nom} » et de son document PDF.\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`,
+    );
+    if (saisie?.trim().toUpperCase() !== "SUPPRIMER") return;
     try {
       if (pdfPath) {
         await supabase.storage.from("conventions-pdf").remove([pdfPath]);
