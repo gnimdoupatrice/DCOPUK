@@ -3,7 +3,7 @@ import { CheckCircle, Clock, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Convention } from "@/lib/conventions";
 
-export async function reporterAlerte(id: string, cibleLocale: string, modification = false) {
+export async function reporterAlerte(id: string, cibleLocale: string) {
   const targetIso = new Date(cibleLocale).toISOString();
   await supabase
     .from("conventions")
@@ -11,8 +11,8 @@ export async function reporterAlerte(id: string, cibleLocale: string, modificati
     .eq("id", id);
   await supabase.from("convention_historique").insert({
     convention_id: id,
-    action: modification ? "Report d'alerte modifié" : "Alerte reportée",
-    note: `${modification ? "Nouveau report fixé au" : "Alerte reportée jusqu'au"} ${new Date(cibleLocale).toLocaleString("fr-FR")}`,
+    action: "Alerte reportée",
+    note: `Alerte reportée jusqu'au ${new Date(cibleLocale).toLocaleString("fr-FR")}`,
   });
   return targetIso;
 }
@@ -41,21 +41,13 @@ export function RegulariserAlerte({
   convention,
   onClose,
   onDone,
-  modifierReport = false,
 }: {
-  modifierReport?: boolean;
   convention: Convention;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [mode, setMode] = useState<"choix" | "report">(modifierReport ? "report" : "choix");
-  const [cible, setCible] = useState(() => {
-    if (modifierReport && convention.alarme_reportee_jusqu_a) {
-      const d = new Date(convention.alarme_reportee_jusqu_a);
-      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    }
-    return defautReportLocal();
-  });
+  const [mode, setMode] = useState<"choix" | "report">("choix");
+  const [cible, setCible] = useState(defautReportLocal());
   const [busy, setBusy] = useState(false);
 
   async function run(fn: () => Promise<unknown>) {
@@ -71,9 +63,9 @@ export function RegulariserAlerte({
       <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-heading text-lg font-bold text-uk-blue">{modifierReport ? "Modifier ou prolonger le report" : "Régulariser l'alerte"}</h2>
+            <h2 className="font-heading text-lg font-bold text-uk-blue">Régulariser l'alerte</h2>
             <p className="mt-1 text-sm text-foreground">{convention.partenaire_nom}</p>
-            <p className={`text-xs ${modifierReport ? "text-uk-blue" : "text-destructive"}`}>{modifierReport ? "Alerte reportée" : "Alerte dépassée sans aucune action"}</p>
+            <p className="text-xs text-destructive">Alerte dépassée sans aucune action</p>
           </div>
           <button onClick={onClose} aria-label="Fermer" className="rounded p-1 hover:bg-muted">
             <X className="h-4 w-4" />
@@ -109,13 +101,13 @@ export function RegulariserAlerte({
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
             />
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => (modifierReport ? onClose() : setMode("choix"))} className="rounded-lg border border-input px-3 py-2 text-xs font-medium hover:bg-muted">
-                {modifierReport ? "Annuler" : "Retour"}
+              <button type="button" onClick={() => setMode("choix")} className="rounded-lg border border-input px-3 py-2 text-xs font-medium hover:bg-muted">
+                Retour
               </button>
               <button
                 type="button"
                 disabled={busy || !cible || new Date(cible).getTime() <= Date.now()}
-                onClick={() => run(() => reporterAlerte(convention.id, cible, modifierReport))}
+                onClick={() => run(() => reporterAlerte(convention.id, cible))}
                 className="rounded-lg bg-uk-blue px-4 py-2 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-50"
               >
                 Confirmer le report

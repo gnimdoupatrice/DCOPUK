@@ -4,7 +4,7 @@ import { timingSafeEqual } from "crypto";
 import { type Convention, joursRestants, momentAlerteConvention } from "@/lib/conventions";
 
 const SUPABASE_URL = "https://yebrrcwlewbktsvggfrx.supabase.co";
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
+const RESEND_URL = "https://api.resend.com/emails";
 const DESTINATAIRE = "beyeliakougnimdoupatrice13@gmail.com";
 const EXPEDITEUR = "DCOP Université de Kara <onboarding@resend.dev>";
 
@@ -37,12 +37,11 @@ async function envoyer(c: Row, type: "alerte" | "report", moment: Date) {
       <p>Heure de l'alerte : ${fmt(moment)}</p>
       <p>Connectez-vous à l'Espace Privé DCOP pour reporter ou arrêter définitivement cette alerte.</p>
     </div>`;
-  const res = await fetch(`${GATEWAY_URL}/emails`, {
+  const res = await fetch(RESEND_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env["LOVABLE_API_KEY"]}`,
-      "X-Connection-Api-Key": process.env["RESEND_API_KEY"]!,
+      Authorization: `Bearer ${process.env["RESEND_API_KEY"]}`,
     },
     body: JSON.stringify({ from: EXPEDITEUR, to: [DESTINATAIRE], subject: `${titre} : ${c.partenaire_nom}`, html }),
   });
@@ -52,7 +51,7 @@ async function envoyer(c: Row, type: "alerte" | "report", moment: Date) {
 async function traiter(request: Request) {
   const secret = process.env["ALERTES_CRON_SECRET"];
   const serviceKey = process.env["DCOP_SUPABASE_SERVICE_ROLE_KEY"];
-  if (!secret || !serviceKey || !process.env["RESEND_API_KEY"] || !process.env["LOVABLE_API_KEY"]) {
+  if (!secret || !serviceKey || !process.env["RESEND_API_KEY"]) {
     return Response.json({ error: "Configuration incomplète" }, { status: 500 });
   }
   if (!jetonValide(request, secret)) return new Response("Unauthorized", { status: 401 });
