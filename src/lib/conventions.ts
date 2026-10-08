@@ -171,24 +171,22 @@ export function momentReferenceAlerte(c: Convention): Date | null {
 }
 
 /**
- * Sonnerie à H (fenêtre 1 h) et rappel à H+8 (fenêtre 1 h).
- * Entre H+1 et H+8, puis après H+9 sans action : « dépassée » (silencieux).
+ * Règle unique : dès que l'heure d'alerte (ou de report) est atteinte ou dépassée,
+ * sans arrêt ni nouveau report, l'alerte est « en attente d'action » et sonne
+ * immédiatement (à la connexion ou en cours de navigation) jusqu'à arbitrage.
  */
 export function etatAlerte(c: Convention, now: number = Date.now()): EtatAlerte {
   if (c.alarme_arretee_le) return "arretee";
   const m = momentReferenceAlerte(c);
   if (!m) return "aucune";
-  const diff = now - m.getTime();
-  if (diff < 0) return c.alarme_reportee_jusqu_a ? "reportee" : "programmee";
-  if (diff < H1 || (diff >= H8 && diff < H8 + H1)) return "sonnerie";
-  return "depassee";
+  if (now < m.getTime()) return c.alarme_reportee_jusqu_a ? "reportee" : "programmee";
+  return "sonnerie";
 }
 
 export const SOUS_MENTION_ALERTE: Partial<Record<EtatAlerte, { label: string; cls: string }>> = {
   arretee: { label: "Alerte éteinte définitivement", cls: "text-muted-foreground" },
   reportee: { label: "Alerte reportée", cls: "text-uk-blue" },
-  depassee: { label: "Alerte dépassée sans aucune action", cls: "text-destructive" },
-  sonnerie: { label: "Alerte en cours", cls: "text-destructive" },
+  sonnerie: { label: "Alerte en attente d'action", cls: "text-destructive" },
 };
 
 export type FiltreCockpit = "" | "actives" | "depassee" | "reportee" | "arretee" | "expire";
