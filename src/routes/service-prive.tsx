@@ -950,13 +950,21 @@ function ConventionForm({
               </Field>
 
               <Field label="Date de signature *">
-                <input type="date" required value={signature} onChange={(e) => setSignature(e.target.value)} className={inputCls} />
+                <input type="date" required value={signature} onChange={(e) => { setSignature(e.target.value); if (dureeChoix && e.target.value) setDateEcheance(ajouterMois(e.target.value, Number(dureeChoix))); }} className={inputCls} />
+              </Field>
+              <Field label="Durée de l'accord">
+                <select value={dureeChoix} onChange={(e) => { setDureeChoix(e.target.value); if (e.target.value && signature) setDateEcheance(ajouterMois(signature, Number(e.target.value))); }} className={inputCls}>
+                  <option value="">Saisie libre de la date de fin</option>
+                  {DUREES.map((m) => (
+                    <option key={m} value={m}>{libelleDuree(m)}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="Date de fin de l'accord (échéance) *">
-                <input type="date" required value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} className={inputCls} />
+                <input type="date" required value={dateEcheance} onChange={(e) => { setDateEcheance(e.target.value); setDureeChoix(""); }} className={inputCls} />
               </Field>
-              <Field label="Durée (calculée)">
-                <input readOnly value={signature && dateEcheance ? `${dureeCalculee} mois` : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
+              <Field label="Durée (calculée)" className="sm:col-span-3">
+                <input readOnly value={signature && dateEcheance ? libelleDuree(dureeCalculee) : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
               </Field>
 
               <Field label="Préavis de dénonciation (mois, optionnel)">
@@ -970,12 +978,26 @@ function ConventionForm({
                 </select>
               </Field>
 
+              <Field label="Programmer l'alerte" className="sm:col-span-3">
+                <select value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls}>
+                  <option value="">Date personnalisée</option>
+                  <option value="preavis" disabled={!preavis.trim()}>À la date limite du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
+                  <option value="180">6 mois avant la fin</option>
+                  <option value="90">3 mois avant la fin (J-90)</option>
+                  <option value="60">2 mois avant la fin (J-60)</option>
+                  <option value="30">1 mois avant la fin (J-30)</option>
+                  <option value="15">15 jours avant la fin</option>
+                  <option value="7">1 semaine avant la fin</option>
+                </select>
+              </Field>
               <Field label="Date de l'alerte *" className="sm:col-span-2">
-                <input type="date" required value={dateAlerte} onChange={(e) => setDateAlerte(e.target.value)} className={inputCls} />
+                <input type="date" required value={dateAlerte} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls} />
               </Field>
               <Field label="Heure de l'alerte *">
                 <input type="time" required value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
               </Field>
+              {alerteErreur && <p className="sm:col-span-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">{alerteErreur}</p>}
+
 
               <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
                 <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
