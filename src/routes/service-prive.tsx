@@ -238,12 +238,32 @@ function Espace({ email }: { email: string }) {
 
   useEffect(() => {
     load();
-    // Rafraîchissement silencieux du registre toutes les 60 s
-    const id = window.setInterval(async () => {
+    async function rafraichir() {
+      // Sur mobile, l'onglet peut s'endormir : on revalide la session avant de relire
+      await supabase.auth.getSession();
       const { data, error } = await supabase.from("conventions").select("*");
-      if (!error && data) setConventions(data as Convention[]);
-    }, 60_000);
-    return () => window.clearInterval(id);
+      if (!error && data) {
+        setConventions(data as Convention[]);
+        setLoadError(null);
+      }
+    }
+    const id = window.setInterval(rafraichir, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") rafraichir();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", rafraichir);
+    window.addEventListener("pageshow", rafraichir);
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") rafraichir();
+    });
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", rafraichir);
+      window.removeEventListener("pageshow", rafraichir);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const actives = useMemo(() => conventions.filter((c) => !c.archived), [conventions]);
@@ -251,10 +271,15 @@ function Espace({ email }: { email: string }) {
 
   async function supprimerDirect(id: string, nom: string, pdfPath?: string | null) {
     const saisie = window.prompt(
-      `Suppression définitive de la convention avec « ${nom} » et de son document PDF.\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`,
+      `Suppression définitive de la convention avec « ${nom} » et de son document PDF.\nCette action est irréversible.\n\nPour confirmer, tapez le nom du partenaire : ${nom}`,
     );
-    if (saisie?.trim().toUpperCase() !== "SUPPRIMER") return;
+    if (saisie === null) return;
+    if (saisie.trim().toLowerCase() !== nom.trim().toLowerCase()) {
+      alert("Nom du partenaire incorrect : la suppression a été annulée.");
+      return;
+    }
     try {
+      await supabase.from("convention_historique").delete().eq("convention_id", id);
       if (pdfPath) {
         await supabase.storage.from("conventions-pdf").remove([pdfPath]);
       }
@@ -421,20 +446,20 @@ function Espace({ email }: { email: string }) {
         {/* Cockpit */}
         <section>
           <h2 className="mb-4 text-lg font-bold text-uk-blue">Cockpit de synthèse</h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            <Kpi icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
-            <Kpi icon={FileSignature} label="En vigueur" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
-            <Kpi icon={AlertTriangle} label="Alertes reportées" value={stats.reportee} tone="text-uk-orange" active={fCockpit === "reportee"} onClick={() => filtrerCockpit("reportee")} />
-            <Kpi icon={Layers} label="Alertes arrêtées définitivement" value={stats.arretee} tone="text-uk-blue" active={fCockpit === "arretee"} onClick={() => filtrerCockpit("arretee")} />
-            <Kpi icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
+          <div className="flex flex-wrap justify-center gap-4">
+            <Kpi loading={loading} icon={FileSignature} label="Total des accords" value={stats.total} tone="text-uk-blue" active={fCockpit === ""} onClick={() => filtrerCockpit("")} />
+            <Kpi loading={loading} icon={FileSignature} label="En vigueur" value={stats.enCours} tone="text-uk-green" active={fCockpit === "actives"} onClick={() => filtrerCockpit("actives")} />
+            <Kpi loading={loading} icon={AlertTriangle} label="Alertes reportées" value={stats.reportee} tone="text-uk-orange" active={fCockpit === "reportee"} onClick={() => filtrerCockpit("reportee")} />
+            <Kpi loading={loading} icon={Layers} label="Alertes arrêtées définitivement" value={stats.arretee} tone="text-uk-blue" active={fCockpit === "arretee"} onClick={() => filtrerCockpit("arretee")} />
+            <Kpi loading={loading} icon={Layers} label="Expirées" value={stats.expire} tone="text-muted-foreground" active={fCockpit === "expire"} onClick={() => filtrerCockpit("expire")} />
           </div>
-          <div className="mt-4 rounded-xl bg-card p-5 shadow-sm">
-            <p className="mb-3 text-sm font-semibold text-foreground">Répartition par pôle</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <p className="mb-3 text-center text-sm font-semibold text-foreground">Répartition par pôle</p>
+            <div className="flex flex-wrap justify-center gap-3">
               {stats.parPole.map(({ pole, n }) => (
-                <div key={pole} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-                  <span className="text-sm text-foreground/80">{pole}</span>
-                  <span className="text-lg font-bold text-uk-blue">{n}</span>
+                <div key={pole} className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 sm:w-[260px]">
+                  <span className="min-w-0 text-sm text-foreground/80">{pole}</span>
+                  <span className="shrink-0 text-lg font-bold text-uk-blue">{loading ? "…" : n}</span>
                 </div>
               ))}
             </div>
@@ -511,7 +536,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "En vigueur", depassee: "Alertes en attente", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "En vigueur", depassee: "En vigueur", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
@@ -523,9 +548,9 @@ function Espace({ email }: { email: string }) {
           {loadError && <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{loadError}</p>}
 
           <p className="mt-3 text-xs text-muted-foreground">Cliquez sur une ligne pour ouvrir la fiche détaillée.</p>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="bg-uk-blue text-primary-foreground">
+          <div className="mt-2 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[1150px] text-left text-sm">
+              <thead className="border-b-2 border-uk-gold bg-uk-blue text-xs uppercase tracking-wide text-primary-foreground">
                 <tr>
                   <th onClick={() => handleSort("statut")} className="cursor-pointer px-3 py-2.5 font-semibold hover:bg-uk-navy">
                     <span className="inline-flex items-center gap-1">
@@ -558,8 +583,8 @@ function Espace({ email }: { email: string }) {
                       Jours restants {sortKey === "jours" ? (sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />}
                     </span>
                   </th>
-                  <th className="px-3 py-2.5 font-semibold">Préavis & Alerte</th>
-                  <th className="px-3 py-2.5 font-semibold">Actions</th>
+                  <th className="px-4 py-3 font-semibold">Préavis & Alerte</th>
+                  <th className="px-4 py-3 text-center font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -582,72 +607,71 @@ function Espace({ email }: { email: string }) {
                       onClick={() => setSelectedId(c.id)}
                       onKeyDown={(e) => e.key === "Enter" && setSelectedId(c.id)}
                       tabIndex={0}
-                      className={`cursor-pointer border-b border-border align-top hover:bg-muted focus:bg-muted focus:outline-none ${
+                      className={`cursor-pointer border-b border-border align-middle transition-colors odd:bg-card even:bg-muted/40 hover:bg-uk-blue/5 focus:bg-uk-blue/5 focus:outline-none ${
                         alarmeActiveId === c.id ? "animate-pulse bg-destructive/10 ring-2 ring-inset ring-destructive/50" : ""
                       }`}
                     >
-                      <td className="px-3 py-3">
-                        <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUT_INFO[c.statut].className}`}>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUT_INFO[c.statut].className}`}>
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
                           {STATUT_INFO[c.statut].label}
                         </span>
                         {c.statut === "actif" && SOUS_MENTION_ALERTE[c.etat] && (
-                          <p className={`mt-1 text-[11px] font-semibold ${SOUS_MENTION_ALERTE[c.etat]!.cls}`}>
+                          <p className={`mt-1.5 text-[11px] font-semibold ${SOUS_MENTION_ALERTE[c.etat]!.cls}`}>
                             {SOUS_MENTION_ALERTE[c.etat]!.label}
                           </p>
                         )}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-4 py-4">
                         <p className="flex items-center gap-1.5 font-semibold text-foreground">
                           {c.partenaire_nom}
-                          {c.pdf_path && <FileText className="h-3.5 w-3.5 text-uk-blue" aria-label="PDF joint" />}
+                          {c.pdf_path && <FileText className="h-3.5 w-3.5 shrink-0 text-uk-blue" aria-label="PDF joint" />}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="mt-0.5 text-xs text-muted-foreground">
                           {[c.partenaire_ville, c.partenaire_pays].filter(Boolean).join(", ")}
                         </p>
                       </td>
-                      <td className="px-3 py-3">
-                        <p>{c.pole}</p>
-                        <p className="text-xs text-muted-foreground">{c.cadre_juridique}</p>
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-foreground">{c.pole}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{c.cadre_juridique}</p>
                       </td>
-                      <td className="px-3 py-3">{c.thematique || "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">{formatDate(c.date_signature)}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">{formatDate(c.date_echeance)}</td>
-                      <td className="px-3 py-3 font-semibold">{c.jours < 0 ? "Échue" : `J-${c.jours}`}</td>
-                      <td className="px-3 py-3 text-xs">
-                        <p className="font-medium text-foreground">{c.preavis_mois == null ? "Préavis —" : `${c.preavis_mois} mois`}</p>
-                        <p className="text-muted-foreground">Reconduction {c.reconduction.toLowerCase()}</p>
-                        {c.jours_avant_preavis <= 60 && c.jours_avant_preavis >= 0 && (
-                          <span className="mt-1 inline-block rounded bg-uk-orange/15 px-1.5 py-0.5 font-bold text-uk-orange">
-                            Préavis dans {c.jours_avant_preavis}j !
-                          </span>
-                        )}
-                        {c.jours_avant_preavis < 0 && c.jours > 0 && (
-                          <span className="mt-1 inline-block rounded bg-destructive/15 px-1.5 py-0.5 font-bold text-destructive">
-                            Délai préavis dépassé
-                          </span>
-                        )}
-                        <p className={`mt-2 border-t border-border pt-1 font-medium ${c.etat === "depassee" ? "text-destructive" : "text-uk-blue"}`}>
-                          <span className="font-semibold">Alerte : </span>
-                          {libelleAlarme(c)}
-                        </p>
+                      <td className="px-4 py-4 text-foreground/80">{c.thematique || "—"}</td>
+                      <td className="px-4 py-4 whitespace-nowrap tabular-nums">{formatDate(c.date_signature)}</td>
+                      <td className="px-4 py-4 whitespace-nowrap tabular-nums">{formatDate(c.date_echeance)}</td>
+                      <td className="px-4 py-4 text-center">
+                        <span className={`inline-block rounded-md px-2 py-1 text-xs font-bold tabular-nums ${c.jours < 0 ? "bg-muted text-muted-foreground" : c.jours <= 60 ? "bg-uk-orange/15 text-uk-orange" : "bg-uk-blue/10 text-uk-blue"}`}>
+                          {c.jours < 0 ? "Échue" : `J-${c.jours}`}
+                        </span>
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {c.statut === "actif" && c.etat === "depassee" && (
-                            <button
-                              type="button"
-                              onClick={() => setRegulariserId(c.id)}
-                              title="Reporter ou arrêter définitivement l'alerte"
-                              className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:brightness-110"
-                            >
-                              <AlertTriangle className="h-3.5 w-3.5" /> Régulariser
-                            </button>
-                          )}
+                      <td className="px-4 py-4 text-xs">
+                        <div className="space-y-1.5">
+                          <div className="rounded-lg border border-border bg-background px-2.5 py-1.5">
+                            <p className="font-semibold text-foreground">{c.preavis_mois == null ? "Sans préavis" : `Préavis : ${c.preavis_mois} mois`}</p>
+                            <p className="text-muted-foreground">Reconduction {c.reconduction.toLowerCase()}</p>
+                            {c.jours_avant_preavis <= 60 && c.jours_avant_preavis >= 0 && (
+                              <span className="mt-1 inline-block rounded bg-uk-orange/15 px-1.5 py-0.5 font-bold text-uk-orange">
+                                Préavis dans {c.jours_avant_preavis}j !
+                              </span>
+                            )}
+                            {c.jours_avant_preavis < 0 && c.jours > 0 && (
+                              <span className="mt-1 inline-block rounded bg-destructive/15 px-1.5 py-0.5 font-bold text-destructive">
+                                Délai préavis dépassé
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 rounded-lg bg-uk-blue/10 px-2.5 py-1.5 font-medium text-uk-blue">
+                            <Bell className="h-3.5 w-3.5 shrink-0" />
+                            <span>{libelleAlarme(c)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => setSelectedId(c.id)}
                             title="Fiche détaillée et avenant"
-                            className="inline-flex items-center gap-1 rounded bg-uk-blue/10 px-2 py-1 text-xs font-semibold text-uk-blue hover:bg-uk-blue hover:text-white"
+                            className="inline-flex items-center gap-1 rounded-md bg-uk-blue/10 px-2.5 py-1.5 text-xs font-semibold text-uk-blue transition hover:bg-uk-blue hover:text-primary-foreground"
                           >
                             <Eye className="h-3.5 w-3.5" /> Détails
                           </button>
@@ -658,7 +682,7 @@ function Espace({ email }: { email: string }) {
                               setShowForm(true);
                             }}
                             title="Modifier les données ou joindre un PDF"
-                            className="inline-flex items-center gap-1 rounded bg-uk-gold/20 px-2 py-1 text-xs font-semibold text-uk-navy hover:bg-uk-gold"
+                            className="inline-flex items-center gap-1 rounded-md bg-uk-gold/20 px-2.5 py-1.5 text-xs font-semibold text-uk-navy transition hover:bg-uk-gold"
                           >
                             <Pencil className="h-3.5 w-3.5" /> Modifier
                           </button>
@@ -667,18 +691,20 @@ function Espace({ email }: { email: string }) {
                               type="button"
                               onClick={() => ouvrirPdfDirect(c.pdf_path!)}
                               title="Ouvrir le document PDF"
-                              className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs font-semibold text-foreground hover:bg-border"
+                              aria-label="Ouvrir le PDF"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-uk-blue transition hover:bg-muted"
                             >
-                              <FileText className="h-3.5 w-3.5 text-uk-blue" /> PDF
+                              <FileText className="h-4 w-4" />
                             </button>
                           )}
                           <button
                             type="button"
                             onClick={() => supprimerDirect(c.id, c.partenaire_nom, c.pdf_path)}
                             title="Supprimer la convention"
-                            className="inline-flex items-center gap-1 rounded bg-destructive/10 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-white"
+                            aria-label="Supprimer la convention"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
                           >
-                            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -745,12 +771,24 @@ function Espace({ email }: { email: string }) {
   );
 }
 
+const DUREES = [3, 6, 9, 12, 14, 15, 18, 24, 30, 36, 48, 60, 72, 120];
+function libelleDuree(m: number) {
+  if (m <= 0) return "—";
+  const a = Math.floor(m / 12);
+  const r = m % 12;
+  const parts = [];
+  if (a) parts.push(`${a} an${a > 1 ? "s" : ""}`);
+  if (r) parts.push(`${r} mois`);
+  return parts.join(" ");
+}
+
 function Kpi({
   icon: Icon,
   label,
   value,
   tone,
   active,
+  loading,
   onClick,
 }: {
   icon: typeof Layers;
@@ -758,6 +796,7 @@ function Kpi({
   value: number;
   tone: string;
   active: boolean;
+  loading?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -765,13 +804,19 @@ function Kpi({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-xl bg-card p-5 text-left shadow-sm ring-2 transition hover:-translate-y-0.5 hover:shadow-md ${
-        active ? "ring-uk-blue" : "ring-transparent"
+      className={`w-[calc(50%-0.5rem)] rounded-2xl border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:w-[220px] ${
+        active ? "border-uk-blue ring-2 ring-uk-blue/30" : "border-border"
       }`}
     >
-      <Icon className={`h-5 w-5 ${tone}`} />
-      <p className={`mt-3 text-3xl font-extrabold ${tone}`}>{value}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className={`text-3xl font-extrabold tracking-tight ${tone}`}>
+          {loading ? <span className="inline-block h-8 w-10 animate-pulse rounded bg-muted" /> : value}
+        </p>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+          <Icon className={`h-4.5 w-4.5 ${tone}`} />
+        </span>
+      </div>
+      <p className="mt-2 text-sm font-medium leading-snug text-muted-foreground">{label}</p>
     </button>
   );
 }
@@ -822,6 +867,28 @@ function ConventionForm({
   const momentAlerte = dateAlerte && heureAlerte ? momentAlerteConvention({ date_alerte: dateAlerte, heure_alerte: heureAlerte } as Convention) : null;
   const statut = dateEcheance ? calculerStatut(dateEcheance, momentAlerte) : null;
 
+  const [dureeChoix, setDureeChoix] = useState("");
+  const [alerteChoix, setAlerteChoix] = useState("");
+  function appliquerAlerte(v: string) {
+    setAlerteChoix(v);
+    if (!v || !dateEcheance) return;
+    if (v === "preavis") {
+      if (preavis.trim()) setDateAlerte(ajouterMois(dateEcheance, -Number(preavis)));
+    } else {
+      const d = new Date(dateEcheance + "T00:00:00");
+      d.setDate(d.getDate() - Number(v));
+      setDateAlerte(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    }
+    if (!heureAlerte) setHeureAlerte("08:00");
+  }
+  const alerteErreur = (() => {
+    if (!dateAlerte || !heureAlerte) return null;
+    if (dateEcheance && dateAlerte > dateEcheance) return "L'alerte ne peut pas être fixée après la date de fin de l'accord.";
+    const changee = !initial || initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte;
+    if (changee && new Date(`${dateAlerte}T${heureAlerte}`).getTime() <= Date.now()) return "L'alerte ne peut pas être fixée dans le passé.";
+    return null;
+  })();
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!poleFinal || !cadreFinal) {
@@ -838,6 +905,10 @@ function ConventionForm({
     }
     if (!dateAlerte || !heureAlerte) {
       setError("Veuillez renseigner la date et l'heure de l'alerte.");
+      return;
+    }
+    if (alerteErreur) {
+      setError(alerteErreur);
       return;
     }
     if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
