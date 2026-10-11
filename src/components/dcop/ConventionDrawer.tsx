@@ -157,10 +157,15 @@ export function ConventionDrawer({
 
   async function supprimer() {
     const saisie = window.prompt(
-      `Suppression définitive de la convention avec « ${c.partenaire_nom} » et de son document PDF.\nCette action est irréversible.\n\nTapez SUPPRIMER pour confirmer :`,
+      `Suppression définitive de la convention avec « ${c.partenaire_nom} » et de son document PDF.\nCette action est irréversible.\n\nPour confirmer, tapez le nom du partenaire : ${c.partenaire_nom}`,
     );
-    if (saisie?.trim().toUpperCase() !== "SUPPRIMER") return;
+    if (saisie === null) return;
+    if (saisie.trim().toLowerCase() !== c.partenaire_nom.trim().toLowerCase()) {
+      setError("Nom du partenaire incorrect : suppression annulée.");
+      return;
+    }
     setBusy(true);
+    await supabase.from("convention_historique").delete().eq("convention_id", c.id);
     if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
     const { error } = await supabase.from("conventions").delete().eq("id", c.id);
     setBusy(false);
