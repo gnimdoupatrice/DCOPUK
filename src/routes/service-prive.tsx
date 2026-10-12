@@ -921,6 +921,51 @@ function ConventionForm({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (gele) {
+      setError("L'alerte a sonné : le dossier est gelé. Aucune modification n'est possible.");
+      return;
+    }
+    if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
+      setError("Le préavis doit être un nombre de mois positif.");
+      return;
+    }
+    if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
+      setError("Le document doit être un PDF de 20 Mo maximum.");
+      return;
+    }
+
+    // Sas 2 : on complète uniquement les champs optionnels vides d'origine
+    if (stabilise && initial) {
+      const maj: Record<string, unknown> = {};
+      const completes: string[] = [];
+      if (!lockVille && ville.trim()) { maj.partenaire_ville = ville.trim(); completes.push("ville"); }
+      if (!lockThem && thematique.trim()) { maj.thematique = thematique.trim(); completes.push("thématique"); }
+      if (!lockPreavis && preavis.trim()) { maj.preavis_mois = Math.round(Number(preavis)); completes.push("préavis"); }
+      if (!Object.keys(maj).length && !pdf) {
+        setError("Aucun élément nouveau à compléter.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      if (Object.keys(maj).length) {
+        const { error: err } = await supabase.from("conventions").update(maj).eq("id", initial.id);
+        if (err) {
+          setBusy(false);
+          setError("Enregistrement impossible : " + err.message);
+          return;
+        }
+      }
+      if (pdf) {
+        const err = await envoyerPdf(initial.id, pdf);
+        if (err) { setBusy(false); setError(err); return; }
+        completes.push("PDF");
+      }
+      await logHistorique(initial.id, "Convention complétée", "Éléments ajoutés : " + completes.join(", "));
+      setBusy(false);
+      onSaved(null);
+      return;
+    }
+
     if (!poleFinal || !cadreFinal) {
       setError("Veuillez renseigner le pôle et le cadre juridique.");
       return;
@@ -929,7 +974,7 @@ function ConventionForm({
       setError("Veuillez renseigner la date de signature et la date de fin.");
       return;
     }
-    if (new Date(dateEcheance) <= new Date(signature)) {
+    if (dateEcheance <= signature) {
       setError("La date de fin doit être postérieure à la date de signature.");
       return;
     }
@@ -941,21 +986,14 @@ function ConventionForm({
       setError(alerteErreur);
       return;
     }
-    if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
-      setError("Le préavis doit être un nombre de mois positif.");
-      return;
-    }
-    if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
-      setError("Le document doit être un PDF de 20 Mo maximum.");
-      return;
-    }
     setBusy(true);
     setError(null);
     if (pole === "__new") {
       await supabase.from("poles").insert({ nom: poleFinal });
     }
 
-    const payload = {
+    const alerteChangee = !!initial && (initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte);
+    const payload: Record<string, unknown> = {
       pole: poleFinal,
       cadre_juridique: cadreFinal,
       partenaire_nom: nom.trim(),
@@ -971,17 +1009,25 @@ function ConventionForm({
       seuil_alerte_jours: null,
       heure_alerte: heureAlerte,
     };
+    if (alerteChangee) {
+      payload.alarme_arretee_le = null;
+      payload.alarme_reportee_jusqu_a = null;
+    }
 
     const res = initial
-      ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
-      : await supabase.from("conventions").insert(payload).select("id").single();
+      ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id, created_at").single()
+      : await supabase.from("conventions").insert(payload).select("id, created_at").single();
     if (res.error || !res.data) {
       setBusy(false);
       setError("Enregistrement impossible : " + (res.error?.message ?? "erreur inconnue"));
       return;
     }
     const id = res.data.id as string;
-    await logHistorique(id, initial ? "Convention modifiée" : "Convention enregistrée");
+    await logHistorique(
+      id,
+      initial ? "Convention modifiée (fenêtre de 48 h)" : "Convention enregistrée",
+      alerteChangee ? `Alerte reprogrammée au ${formatDate(dateAlerte)} à ${heureAlerte}` : null,
+    );
     if (pdf) {
       const err = await envoyerPdf(id, pdf);
       if (err) {
@@ -991,18 +1037,43 @@ function ConventionForm({
       }
     }
     setBusy(false);
-    onSaved();
+    onSaved(
+      initial
+        ? null
+        : {
+            nom: nom.trim(),
+            pole: poleFinal,
+            echeance: dateEcheance,
+            alerte: `${formatDate(dateAlerte)} à ${heureAlerte}`,
+            finCorrection: finFenetreCorrection({ created_at: res.data.created_at as string }),
+          },
+    );
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/50 p-4 sm:py-10">
       <form onSubmit={submit} className="w-full max-w-2xl rounded-2xl bg-card p-6 shadow-2xl sm:p-8">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-uk-blue">{initial ? "Modifier la convention" : "Nouvelle convention"}</h3>
+          <h3 className="text-lg font-bold text-uk-blue">{!initial ? "Nouvelle convention" : stabilise ? "Compléter la convention" : "Modifier la convention"}</h3>
           <button type="button" onClick={onClose} aria-label="Fermer" className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
+        {initial && sas === "libre" && (
+          <p className="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+            Convention récente : modification complète autorisée. Il vous reste environ {heuresRestantes} h pour corriger les erreurs de saisie.
+          </p>
+        )}
+        {stabilise && (
+          <p className="mt-3 rounded-lg bg-sky-100 px-3 py-2 text-xs font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">
+            Dossier stabilisé : seuls les éléments non renseignés à l'origine peuvent être complétés, une seule fois.
+          </p>
+        )}
+        {gele && (
+          <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+            L'alerte de cette convention a sonné : le dossier est gelé. Utilisez « Reporter » ou « Avenant ».
+          </p>
+        )}
 
         <Step n={1} title="Pôle opérationnel">
           <select required value={pole} onChange={(e) => { setPole(e.target.value); setCadre(""); }} className={inputCls}>
