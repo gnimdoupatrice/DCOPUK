@@ -293,6 +293,85 @@ export function momentAlerteConvention(c: Convention): Date | null {
 export function momentRappel8h(momentInitial: Date): Date {
   return new Date(momentInitial.getTime() + 8 * 60 * 60 * 1000);
 }
+
+/* ---------- Modification : trois sas ---------- */
+
+export const FENETRE_CORRECTION_MS = 48 * 60 * 60 * 1000;
+
+export function finFenetreCorrection(c: Pick<Convention, "created_at">): Date {
+  return new Date(new Date(c.created_at).getTime() + FENETRE_CORRECTION_MS);
+}
+
+/** L'alerte a-t-elle déjà sonné au moins une fois ? (heure initiale atteinte) */
+export function alerteDejaSonnee(c: Convention, now: number = Date.now()): boolean {
+  const m = momentAlerteConvention(c);
+  return !!m && now >= m.getTime();
+}
+
+export type SasModification = "libre" | "stabilise" | "gele";
+
+/** Sas 1 : < 48 h · Sas 2 : dossier stabilisé · Sas 3 : alerte sonnée = gel total. */
+export function sasModification(c: Convention, now: number = Date.now()): SasModification {
+  if (alerteDejaSonnee(c, now) || c.alarme_arretee_le || c.archived) return "gele";
+  if (now < finFenetreCorrection(c).getTime()) return "libre";
+  return "stabilise";
+}
+
+/** Champs optionnels complétables après 48 h s'ils étaient vides. */
+export function champsOptionnelsVides(c: Convention): string[] {
+  const vides: string[] = [];
+  if (!c.partenaire_ville) vides.push("ville");
+  if (!c.thematique) vides.push("thematique");
+  if (c.preavis_mois == null) vides.push("preavis");
+  if (!c.pdf_path) vides.push("pdf");
+  return vides;
+}
+
+export function droitModification(c: Convention): { ok: boolean; sas: SasModification; raison: string } {
+  const sas = sasModification(c);
+  if (sas === "gele")
+    return { ok: false, sas, raison: "L'alerte de cette convention a sonné : le dossier est gelé. Utilisez « Reporter » ou « Avenant »." };
+  if (sas === "stabilise" && champsOptionnelsVides(c).length === 0)
+    return { ok: false, sas, raison: "Dossier complet et stabilisé : aucune modification directe. Toute prolongation passe par un Avenant." };
+  return { ok: true, sas, raison: sas === "libre" ? "Modifier (fenêtre de correction de 48 h)" : "Compléter les éléments non renseignés" };
+}
+
+/* ---------- Durée détaillée ---------- */
+
+export function isoLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Ajoute (ou retire) des mois / jours à une date ISO, en heure locale. */
+export function decalerDate(dateIso: string, mois: number, jours = 0): string {
+  if (!dateIso) return "";
+  const d = new Date(dateIso + "T00:00:00");
+  const jour = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + mois);
+  const dernier = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(jour, dernier));
+  d.setDate(d.getDate() + jours);
+  return isoLocal(d);
+}
+
+export function dureeDetaillee(debut: string, fin: string): { ans: number; mois: number; jours: number } | null {
+  if (!debut || !fin || fin <= debut) return null;
+  const total = dureeEntreMois(debut, fin);
+  const base = decalerDate(debut, total);
+  const jours = Math.round((new Date(fin + "T00:00:00").getTime() - new Date(base + "T00:00:00").getTime()) / 86400000);
+  return { ans: Math.floor(total / 12), mois: total % 12, jours: Math.max(0, jours) };
+}
+
+export function libelleDureeDetaillee(d: { ans: number; mois: number; jours: number } | null): string {
+  if (!d) return "—";
+  const p: string[] = [];
+  if (d.ans) p.push(`${d.ans} an${d.ans > 1 ? "s" : ""}`);
+  if (d.mois) p.push(`${d.mois} mois`);
+  if (d.jours) p.push(`${d.jours} jour${d.jours > 1 ? "s" : ""}`);
+  if (!p.length) return "—";
+  return p.length === 1 ? p[0] : p.slice(0, -1).join(", ") + " et " + p[p.length - 1];
+}
 const fmtDH = (d: Date) =>
   d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 

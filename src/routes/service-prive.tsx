@@ -33,11 +33,17 @@ import {
   etatAlerte,
   SOUS_MENTION_ALERTE,
   STATUT_INFO,
-  ajouterMois,
   calculerEcheance,
   calculerStatut,
   statutConvention,
   momentAlerteConvention,
+  sasModification,
+  finFenetreCorrection,
+  dureeDetaillee,
+  libelleDureeDetaillee,
+  decalerDate,
+  droitModification,
+  type SasModification,
   dateLimitePreavis,
   dureeEntreMois,
   formatDate,
@@ -172,6 +178,7 @@ function Espace({ email }: { email: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Convention | null>(null);
+  const [infoCreation, setInfoCreation] = useState<InfoCreation | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [q, setQ] = useState("");
@@ -427,9 +434,9 @@ function Espace({ email }: { email: string }) {
               <p className="text-xs opacity-80">Veille & alertes — Conventions et partenariats</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link to="/" className="hidden opacity-90 hover:underline sm:inline">
-              Service Public
+          <div className="flex items-center gap-2 text-sm sm:gap-3">
+            <Link to="/" className="inline-flex items-center gap-1 rounded-md border border-primary-foreground/40 px-2.5 py-1.5 font-semibold hover:bg-primary-foreground/10" title="Retour au Service Public">
+              ← <span className="sm:hidden">Public</span><span className="hidden sm:inline">Service Public</span>
             </Link>
             <span className="hidden opacity-80 md:inline">{email}</span>
             <button
@@ -677,12 +684,13 @@ function Espace({ email }: { email: string }) {
                           </button>
                           <button
                             type="button"
+                            disabled={!droitModification(c).ok}
                             onClick={() => {
                               setEditing(c);
                               setShowForm(true);
                             }}
-                            title="Modifier les données ou joindre un PDF"
-                            className="inline-flex items-center gap-1 rounded-md bg-uk-gold/20 px-2.5 py-1.5 text-xs font-semibold text-uk-navy transition hover:bg-uk-gold"
+                            title={droitModification(c).raison}
+                            className="inline-flex items-center gap-1 rounded-md bg-uk-gold/20 px-2.5 py-1.5 text-xs font-semibold text-uk-navy transition hover:bg-uk-gold disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-uk-gold/20"
                           >
                             <Pencil className="h-3.5 w-3.5" /> Modifier
                           </button>
@@ -735,8 +743,9 @@ function Espace({ email }: { email: string }) {
           poles={poles}
           initial={editing}
           onClose={() => setShowForm(false)}
-          onSaved={() => {
+          onSaved={(info) => {
             setShowForm(false);
+            if (info) setInfoCreation(info);
             setEditing(null);
             load();
           }}
@@ -766,21 +775,37 @@ function Espace({ email }: { email: string }) {
           </div>
         </div>
       )}
+      {infoCreation && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={() => setInfoCreation(null)}>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-heading text-lg font-bold text-uk-green">✓ Convention enregistrée avec succès</h2>
+            <dl className="mt-3 space-y-1 text-sm">
+              <div><dt className="inline font-semibold">Partenaire : </dt><dd className="inline">{infoCreation.nom}</dd></div>
+              <div><dt className="inline font-semibold">Pôle : </dt><dd className="inline">{infoCreation.pole}</dd></div>
+              <div><dt className="inline font-semibold">Échéance : </dt><dd className="inline">{formatDate(infoCreation.echeance)}</dd></div>
+              <div><dt className="inline font-semibold">Alerte : </dt><dd className="inline">{infoCreation.alerte}</dd></div>
+            </dl>
+            <div className="mt-4 rounded-lg bg-emerald-100 p-3 text-sm text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">
+              <p className="font-semibold">⏱ Fenêtre de correction libre : 48 heures</p>
+              <p>Jusqu'au {infoCreation.finCorrection.toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}, vous pouvez corriger l'ensemble du formulaire.</p>
+            </div>
+            <div className="mt-3 rounded-lg bg-sky-100 p-3 text-sm text-sky-900 dark:bg-sky-950/60 dark:text-sky-200">
+              <p className="font-semibold">Après 48 heures : dossier stabilisé</p>
+              <p>Partenaire, pays, pôle, cadre juridique, dates, alerte et reconduction sont verrouillés. Seuls les éléments laissés vides aujourd'hui (PDF, ville, thématique, préavis) pourront être complétés, une seule fois. Toute prolongation passe par un Avenant.</p>
+            </div>
+            <div className="mt-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+              <p className="font-semibold">Dès que l'alerte sonne : gel total</p>
+              <p>Plus aucune modification, même des éléments optionnels. Seuls « Reporter » ou « Avenant » restent possibles.</p>
+            </div>
+            <button type="button" onClick={() => setInfoCreation(null)} className="mt-5 w-full rounded-lg bg-uk-blue px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110">J'ai pris note</button>
+          </div>
+        </div>
+      )}
       <InstallPwa />
     </div>
   );
 }
 
-const DUREES = [3, 6, 9, 12, 14, 15, 18, 24, 30, 36, 48, 60, 72, 120];
-function libelleDuree(m: number) {
-  if (m <= 0) return "—";
-  const a = Math.floor(m / 12);
-  const r = m % 12;
-  const parts = [];
-  if (a) parts.push(`${a} an${a > 1 ? "s" : ""}`);
-  if (r) parts.push(`${r} mois`);
-  return parts.join(" ");
-}
 
 function Kpi({
   icon: Icon,
@@ -823,6 +848,10 @@ function Kpi({
 
 /* ---------------- Formulaire (entonnoir) ---------------- */
 
+type InfoCreation = { nom: string; pole: string; echeance: string; alerte: string; finCorrection: Date };
+const lk = (l: boolean) => (l ? " cursor-not-allowed bg-muted opacity-70" : "");
+const cad = (l: boolean) => (l ? " 🔒" : "");
+
 function ConventionForm({
   poles,
   initial,
@@ -832,7 +861,7 @@ function ConventionForm({
   poles: string[];
   initial?: Convention | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (info: InfoCreation | null) => void;
 }) {
   const initCadres = initial ? (CADRES_PAR_POLE[initial.pole] ?? []) : [];
   const initCadreConnu = !!initial && initCadres.includes(initial.cadre_juridique);
@@ -863,27 +892,57 @@ function ConventionForm({
   const cadres = CADRES_PAR_POLE[poleFinal] ?? [];
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
+  // Sas de modification
+  const sas: SasModification = initial ? sasModification(initial) : "libre";
+  const stabilise = sas === "stabilise";
+  const gele = sas === "gele";
+  const lockCore = stabilise || gele;
+  const lockVille = gele || (stabilise && !!initial?.partenaire_ville);
+  const lockThem = gele || (stabilise && !!initial?.thematique);
+  const lockPreavis = gele || (stabilise && initial?.preavis_mois != null);
+  const lockPdf = gele || (!!initial?.pdf_path && sas !== "libre");
+  const heuresRestantes = initial ? Math.max(0, Math.ceil((finFenetreCorrection(initial).getTime() - Date.now()) / 3600000)) : 48;
+
+  const detail = dureeDetaillee(signature, dateEcheance);
   const dureeCalculee = signature && dateEcheance ? dureeEntreMois(signature, dateEcheance) : 0;
   const momentAlerte = dateAlerte && heureAlerte ? momentAlerteConvention({ date_alerte: dateAlerte, heure_alerte: heureAlerte } as Convention) : null;
   const statut = dateEcheance ? calculerStatut(dateEcheance, momentAlerte) : null;
 
-  const [dureeChoix, setDureeChoix] = useState("");
+  const initDet = initial ? dureeDetaillee(initial.date_signature, initial.date_echeance) : null;
+  const [dureeAns, setDureeAns] = useState(initDet ? String(initDet.ans) : "");
+  const [dureeMois, setDureeMois] = useState(initDet ? String(initDet.mois) : "");
+  function appliquerDuree(a: string, m: string, sig = signature) {
+    setDureeAns(a);
+    setDureeMois(m);
+    const total = Number(a || 0) * 12 + Number(m || 0);
+    if (sig && total > 0) setDateEcheance(decalerDate(sig, total));
+  }
+  function saisirEcheance(v: string) {
+    setDateEcheance(v);
+    const d = dureeDetaillee(signature, v);
+    if (d) {
+      setDureeAns(String(Math.min(d.ans, 10)));
+      setDureeMois(String(d.mois));
+    }
+  }
+
   const [alerteChoix, setAlerteChoix] = useState("");
   function appliquerAlerte(v: string) {
     setAlerteChoix(v);
     if (!v || !dateEcheance) return;
     if (v === "preavis") {
-      if (preavis.trim()) setDateAlerte(ajouterMois(dateEcheance, -Number(preavis)));
-    } else {
-      const d = new Date(dateEcheance + "T00:00:00");
-      d.setDate(d.getDate() - Number(v));
-      setDateAlerte(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      if (preavis.trim()) setDateAlerte(decalerDate(dateEcheance, -Number(preavis)));
+    } else if (v.startsWith("j")) {
+      setDateAlerte(decalerDate(dateEcheance, 0, -Number(v.slice(1))));
+    } else if (v.startsWith("m")) {
+      setDateAlerte(decalerDate(dateEcheance, -Number(v.slice(1))));
     }
     if (!heureAlerte) setHeureAlerte("08:00");
   }
   const alerteErreur = (() => {
     if (!dateAlerte || !heureAlerte) return null;
     if (dateEcheance && dateAlerte > dateEcheance) return "L'alerte ne peut pas être fixée après la date de fin de l'accord.";
+    if (signature && dateAlerte < signature) return "L'alerte ne peut pas être antérieure à la date de signature.";
     const changee = !initial || initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte;
     if (changee && new Date(`${dateAlerte}T${heureAlerte}`).getTime() <= Date.now()) return "L'alerte ne peut pas être fixée dans le passé.";
     return null;
@@ -891,6 +950,51 @@ function ConventionForm({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (gele) {
+      setError("L'alerte a sonné : le dossier est gelé. Aucune modification n'est possible.");
+      return;
+    }
+    if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
+      setError("Le préavis doit être un nombre de mois positif.");
+      return;
+    }
+    if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
+      setError("Le document doit être un PDF de 20 Mo maximum.");
+      return;
+    }
+
+    // Sas 2 : on complète uniquement les champs optionnels vides d'origine
+    if (stabilise && initial) {
+      const maj: Record<string, unknown> = {};
+      const completes: string[] = [];
+      if (!lockVille && ville.trim()) { maj.partenaire_ville = ville.trim(); completes.push("ville"); }
+      if (!lockThem && thematique.trim()) { maj.thematique = thematique.trim(); completes.push("thématique"); }
+      if (!lockPreavis && preavis.trim()) { maj.preavis_mois = Math.round(Number(preavis)); completes.push("préavis"); }
+      if (!Object.keys(maj).length && !pdf) {
+        setError("Aucun élément nouveau à compléter.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      if (Object.keys(maj).length) {
+        const { error: err } = await supabase.from("conventions").update(maj).eq("id", initial.id);
+        if (err) {
+          setBusy(false);
+          setError("Enregistrement impossible : " + err.message);
+          return;
+        }
+      }
+      if (pdf) {
+        const err = await envoyerPdf(initial.id, pdf);
+        if (err) { setBusy(false); setError(err); return; }
+        completes.push("PDF");
+      }
+      await logHistorique(initial.id, "Convention complétée", "Éléments ajoutés : " + completes.join(", "));
+      setBusy(false);
+      onSaved(null);
+      return;
+    }
+
     if (!poleFinal || !cadreFinal) {
       setError("Veuillez renseigner le pôle et le cadre juridique.");
       return;
@@ -899,7 +1003,7 @@ function ConventionForm({
       setError("Veuillez renseigner la date de signature et la date de fin.");
       return;
     }
-    if (new Date(dateEcheance) <= new Date(signature)) {
+    if (dateEcheance <= signature) {
       setError("La date de fin doit être postérieure à la date de signature.");
       return;
     }
@@ -911,21 +1015,14 @@ function ConventionForm({
       setError(alerteErreur);
       return;
     }
-    if (preavis.trim() !== "" && (isNaN(Number(preavis)) || Number(preavis) < 0)) {
-      setError("Le préavis doit être un nombre de mois positif.");
-      return;
-    }
-    if (pdf && (pdf.type !== "application/pdf" || pdf.size > 20 * 1024 * 1024)) {
-      setError("Le document doit être un PDF de 20 Mo maximum.");
-      return;
-    }
     setBusy(true);
     setError(null);
     if (pole === "__new") {
       await supabase.from("poles").insert({ nom: poleFinal });
     }
 
-    const payload = {
+    const alerteChangee = !!initial && (initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte);
+    const payload: Record<string, unknown> = {
       pole: poleFinal,
       cadre_juridique: cadreFinal,
       partenaire_nom: nom.trim(),
@@ -941,17 +1038,25 @@ function ConventionForm({
       seuil_alerte_jours: null,
       heure_alerte: heureAlerte,
     };
+    if (alerteChangee) {
+      payload.alarme_arretee_le = null;
+      payload.alarme_reportee_jusqu_a = null;
+    }
 
     const res = initial
-      ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id").single()
-      : await supabase.from("conventions").insert(payload).select("id").single();
+      ? await supabase.from("conventions").update(payload).eq("id", initial.id).select("id, created_at").single()
+      : await supabase.from("conventions").insert(payload).select("id, created_at").single();
     if (res.error || !res.data) {
       setBusy(false);
       setError("Enregistrement impossible : " + (res.error?.message ?? "erreur inconnue"));
       return;
     }
     const id = res.data.id as string;
-    await logHistorique(id, initial ? "Convention modifiée" : "Convention enregistrée");
+    await logHistorique(
+      id,
+      initial ? "Convention modifiée (fenêtre de 48 h)" : "Convention enregistrée",
+      alerteChangee ? `Alerte reprogrammée au ${formatDate(dateAlerte)} à ${heureAlerte}` : null,
+    );
     if (pdf) {
       const err = await envoyerPdf(id, pdf);
       if (err) {
@@ -961,21 +1066,46 @@ function ConventionForm({
       }
     }
     setBusy(false);
-    onSaved();
+    onSaved(
+      initial
+        ? null
+        : {
+            nom: nom.trim(),
+            pole: poleFinal,
+            echeance: dateEcheance,
+            alerte: `${formatDate(dateAlerte)} à ${heureAlerte}`,
+            finCorrection: finFenetreCorrection({ created_at: res.data.created_at as string }),
+          },
+    );
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/50 p-4 sm:py-10">
       <form onSubmit={submit} className="w-full max-w-2xl rounded-2xl bg-card p-6 shadow-2xl sm:p-8">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-uk-blue">{initial ? "Modifier la convention" : "Nouvelle convention"}</h3>
+          <h3 className="text-lg font-bold text-uk-blue">{!initial ? "Nouvelle convention" : stabilise ? "Compléter la convention" : "Modifier la convention"}</h3>
           <button type="button" onClick={onClose} aria-label="Fermer" className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
+        {initial && sas === "libre" && (
+          <p className="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+            Convention récente : modification complète autorisée. Il vous reste environ {heuresRestantes} h pour corriger les erreurs de saisie.
+          </p>
+        )}
+        {stabilise && (
+          <p className="mt-3 rounded-lg bg-sky-100 px-3 py-2 text-xs font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">
+            Dossier stabilisé : seuls les éléments non renseignés à l'origine peuvent être complétés, une seule fois.
+          </p>
+        )}
+        {gele && (
+          <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+            L'alerte de cette convention a sonné : le dossier est gelé. Utilisez « Reporter » ou « Avenant ».
+          </p>
+        )}
 
         <Step n={1} title="Pôle opérationnel">
-          <select required value={pole} onChange={(e) => { setPole(e.target.value); setCadre(""); }} className={inputCls}>
+          <select required disabled={lockCore} value={pole} onChange={(e) => { setPole(e.target.value); setCadre(""); }} className={inputCls + lk(lockCore)}>
             <option value="">— Choisir un pôle —</option>
             {poles.map((p) => (
               <option key={p}>{p}</option>
@@ -990,7 +1120,7 @@ function ConventionForm({
         {poleFinal && (
           <Step n={2} title="Cadre juridique / type d'accord">
             {cadres.length > 0 && (
-              <select required value={cadre} onChange={(e) => setCadre(e.target.value)} className={inputCls}>
+              <select required disabled={lockCore} value={cadre} onChange={(e) => setCadre(e.target.value)} className={inputCls + lk(lockCore)}>
                 <option value="">— Choisir un type d'accord —</option>
                 {cadres.map((c) => (
                   <option key={c}>{c}</option>
@@ -999,7 +1129,7 @@ function ConventionForm({
               </select>
             )}
             {(cadre === "__libre" || cadres.length === 0) && (
-              <input required placeholder="Préciser le type d'accord" value={cadreLibre} onChange={(e) => setCadreLibre(e.target.value)} className={inputCls} />
+              <input required disabled={lockCore} placeholder="Préciser le type d'accord" value={cadreLibre} onChange={(e) => setCadreLibre(e.target.value)} className={inputCls + lk(lockCore)} />
             )}
           </Step>
         )}
@@ -1007,71 +1137,89 @@ function ConventionForm({
         {cadreFinal && (
           <Step n={3} title="Informations contractuelles">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Partenaire contractant *" className="sm:col-span-3">
-                <input required value={nom} onChange={(e) => setNom(e.target.value)} className={inputCls} />
+              <Field label={"Partenaire contractant *" + cad(lockCore)} className="sm:col-span-3">
+                <input required disabled={lockCore} value={nom} onChange={(e) => setNom(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Pays *">
-                <input required value={pays} onChange={(e) => setPays(e.target.value)} className={inputCls} />
+              <Field label={"Pays *" + cad(lockCore)}>
+                <input required disabled={lockCore} value={pays} onChange={(e) => setPays(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Ville" className="sm:col-span-2">
-                <input value={ville} onChange={(e) => setVille(e.target.value)} className={inputCls} />
+              <Field label={"Ville" + cad(lockVille)} className="sm:col-span-2">
+                <input disabled={lockVille} value={ville} onChange={(e) => setVille(e.target.value)} className={inputCls + lk(lockVille)} />
               </Field>
-              <Field label="Thématique / domaine d'intervention" className="sm:col-span-3">
-                <input value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls} />
-              </Field>
-
-              <Field label="Date de signature *">
-                <input type="date" required value={signature} onChange={(e) => { setSignature(e.target.value); if (dureeChoix && e.target.value) setDateEcheance(ajouterMois(e.target.value, Number(dureeChoix))); }} className={inputCls} />
-              </Field>
-              <Field label="Durée de l'accord">
-                <select value={dureeChoix} onChange={(e) => { setDureeChoix(e.target.value); if (e.target.value && signature) setDateEcheance(ajouterMois(signature, Number(e.target.value))); }} className={inputCls}>
-                  <option value="">Saisie libre de la date de fin</option>
-                  {DUREES.map((m) => (
-                    <option key={m} value={m}>{libelleDuree(m)}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Date de fin de l'accord (échéance) *">
-                <input type="date" required value={dateEcheance} onChange={(e) => { setDateEcheance(e.target.value); setDureeChoix(""); }} className={inputCls} />
-              </Field>
-              <Field label="Durée (calculée)" className="sm:col-span-3">
-                <input readOnly value={signature && dateEcheance ? libelleDuree(dureeCalculee) : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
+              <Field label={"Thématique / domaine d'intervention" + cad(lockThem)} className="sm:col-span-3">
+                <input disabled={lockThem} value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls + lk(lockThem)} />
               </Field>
 
-              <Field label="Préavis de dénonciation (mois, optionnel)">
-                <input type="number" min={0} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls} />
+              <Field label={"Date de signature *" + cad(lockCore)}>
+                <input type="date" required disabled={lockCore} value={signature} onChange={(e) => { setSignature(e.target.value); appliquerDuree(dureeAns, dureeMois, e.target.value); }} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Reconduction" className="sm:col-span-2">
-                <select value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls}>
+              <div className="block text-xs font-medium text-muted-foreground">
+                Durée convenue{cad(lockCore)}
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <select aria-label="Années" disabled={lockCore} value={dureeAns} onChange={(e) => appliquerDuree(e.target.value, dureeMois)} className={inputCls.replace("mt-1 ", "") + lk(lockCore)}>
+                    <option value="">Années</option>
+                    {Array.from({ length: 11 }, (_, i) => (
+                      <option key={i} value={i}>{i} an{i > 1 ? "s" : ""}</option>
+                    ))}
+                  </select>
+                  <select aria-label="Mois" disabled={lockCore} value={dureeMois} onChange={(e) => appliquerDuree(dureeAns, e.target.value)} className={inputCls.replace("mt-1 ", "") + lk(lockCore)}>
+                    <option value="">Mois</option>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>{i} mois</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <Field label={"Date de fin de l'accord (échéance) *" + cad(lockCore)}>
+                <input type="date" required disabled={lockCore} min={signature || undefined} value={dateEcheance} onChange={(e) => saisirEcheance(e.target.value)} className={inputCls + lk(lockCore)} />
+              </Field>
+              <p className="sm:col-span-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Durée réelle : <span className="font-semibold text-uk-blue">{libelleDureeDetaillee(detail)}</span>
+                <span className="ml-1">— choisissez années + mois, ou saisissez librement la date de fin au calendrier.</span>
+              </p>
+
+              <Field label={"Préavis de dénonciation (mois, optionnel)" + cad(lockPreavis)}>
+                <input type="number" min={0} disabled={lockPreavis} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls + lk(lockPreavis)} />
+              </Field>
+              <Field label={"Reconduction" + cad(lockCore)} className="sm:col-span-2">
+                <select disabled={lockCore} value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls + lk(lockCore)}>
                   <option>Non reconductible</option>
                   <option>Expresse</option>
                   <option>Tacite</option>
                 </select>
               </Field>
 
-              <Field label="Programmer l'alerte" className="sm:col-span-3">
-                <select value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls}>
-                  <option value="">Date personnalisée</option>
-                  <option value="preavis" disabled={!preavis.trim()}>À la date limite du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
-                  <option value="180">6 mois avant la fin</option>
-                  <option value="90">3 mois avant la fin (J-90)</option>
-                  <option value="60">2 mois avant la fin (J-60)</option>
-                  <option value="30">1 mois avant la fin (J-30)</option>
-                  <option value="15">15 jours avant la fin</option>
-                  <option value="7">1 semaine avant la fin</option>
+              <Field label="Programmation assistée de l'alerte" className="sm:col-span-3">
+                <select disabled={lockCore} value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls + lk(lockCore)}>
+                  <option value="">Saisie libre / date personnalisée</option>
+                  <optgroup label="Repère contractuel">
+                    <option value="preavis" disabled={!preavis.trim()}>À l'échéance du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
+                  </optgroup>
+                  <optgroup label="Semaines avant la fin">
+                    <option value="j7">1 semaine avant la fin (J-7)</option>
+                    <option value="j14">2 semaines avant la fin (J-14)</option>
+                    <option value="j21">3 semaines avant la fin (J-21)</option>
+                  </optgroup>
+                  <optgroup label="Mois avant la fin">
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={`m${m}`}>
+                        {m === 12 ? "12 mois (1 an)" : `${m} mois`} avant la fin{m === 3 ? " — trimestre" : m === 6 ? " — semestre" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </Field>
-              <Field label="Date de l'alerte *" className="sm:col-span-2">
-                <input type="date" required value={dateAlerte} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls} />
+              <Field label={"Date de l'alerte *" + cad(lockCore)} className="sm:col-span-2">
+                <input type="date" required disabled={lockCore} value={dateAlerte} min={signature || undefined} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Heure de l'alerte *">
-                <input type="time" required value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
+              <Field label={"Heure de l'alerte *" + cad(lockCore)}>
+                <input type="time" required disabled={lockCore} value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              {alerteErreur && <p className="sm:col-span-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">{alerteErreur}</p>}
+              {alerteErreur && !lockCore && <p className="sm:col-span-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">{alerteErreur}</p>}
 
 
-              <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
-                <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
+              <Field label={(initial?.pdf_path ? (lockPdf ? "PDF officiel déjà joint" : "Remplacer le PDF officiel scanné") : "Document PDF officiel scanné (optionnel)") + cad(lockPdf)} className="sm:col-span-3">
+                <input type="file" accept="application/pdf" disabled={lockPdf} onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls + lk(lockPdf)} />
               </Field>
             </div>
             {statut && (

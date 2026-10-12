@@ -12,6 +12,7 @@ import {
   SOUS_MENTION_ALERTE,
   formatDate,
   joursRestants,
+  droitModification,
   type Convention,
   type HistoriqueEntry,
 } from "@/lib/conventions";
@@ -310,7 +311,7 @@ export function ConventionDrawer({
               ) : (
                 <ActionBtn icon={Archive} label="Archiver / clôturer" onClick={() => setPanel(panel === "archive" ? null : "archive")} tone="bg-uk-orange text-white" />
               )}
-              <ActionBtn icon={Pencil} label="Modifier" onClick={onEdit} tone="bg-uk-blue text-primary-foreground" />
+              <ActionBtn icon={Pencil} label="Modifier" onClick={onEdit} tone="bg-uk-blue text-primary-foreground" disabled={!droitModification(c).ok} title={droitModification(c).raison} />
               <ActionBtn icon={Trash2} label="Supprimer" onClick={supprimer} tone="bg-destructive text-destructive-foreground" />
             </div>
 
@@ -381,9 +382,9 @@ function Item({ label, value, full }: { label: string; value: string; full?: boo
   );
 }
 
-function ActionBtn({ icon: Icon, label, onClick, tone }: { icon: typeof Pencil; label: string; onClick: () => void; tone: string }) {
+function ActionBtn({ icon: Icon, label, onClick, tone, disabled, title }: { icon: typeof Pencil; label: string; onClick: () => void; tone: string; disabled?: boolean; title?: string }) {
   return (
-    <button type="button" onClick={onClick} className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold hover:brightness-110 ${tone}`}>
+    <button type="button" onClick={onClick} disabled={disabled} title={title} className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${tone}`}>
       <Icon className="h-4 w-4" /> {label}
     </button>
   );
