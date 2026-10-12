@@ -967,9 +967,9 @@ function ConventionForm({
     if (stabilise && initial) {
       const maj: Record<string, unknown> = {};
       const completes: string[] = [];
-      if (!lockVille && ville.trim()) { maj.partenaire_ville = ville.trim(); completes.push("ville"); }
-      if (!lockThem && thematique.trim()) { maj.thematique = thematique.trim(); completes.push("thématique"); }
-      if (!lockPreavis && preavis.trim()) { maj.preavis_mois = Math.round(Number(preavis)); completes.push("préavis"); }
+      if (!lockVille && ville.trim()) { maj["partenaire_ville"] = ville.trim(); completes.push("ville"); }
+      if (!lockThem && thematique.trim()) { maj["thematique"] = thematique.trim(); completes.push("thématique"); }
+      if (!lockPreavis && preavis.trim()) { maj["preavis_mois"] = Math.round(Number(preavis)); completes.push("préavis"); }
       if (!Object.keys(maj).length && !pdf) {
         setError("Aucun élément nouveau à compléter.");
         return;
@@ -1039,8 +1039,8 @@ function ConventionForm({
       heure_alerte: heureAlerte,
     };
     if (alerteChangee) {
-      payload.alarme_arretee_le = null;
-      payload.alarme_reportee_jusqu_a = null;
+      payload["alarme_arretee_le"] = null;
+      payload["alarme_reportee_jusqu_a"] = null;
     }
 
     const res = initial
