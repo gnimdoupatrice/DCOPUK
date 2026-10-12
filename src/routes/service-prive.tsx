@@ -33,7 +33,6 @@ import {
   etatAlerte,
   SOUS_MENTION_ALERTE,
   STATUT_INFO,
-  ajouterMois,
   calculerEcheance,
   calculerStatut,
   statutConvention,
@@ -179,6 +178,7 @@ function Espace({ email }: { email: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Convention | null>(null);
+  const [infoCreation, setInfoCreation] = useState<InfoCreation | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [q, setQ] = useState("");
@@ -434,9 +434,9 @@ function Espace({ email }: { email: string }) {
               <p className="text-xs opacity-80">Veille & alertes — Conventions et partenariats</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link to="/" className="hidden opacity-90 hover:underline sm:inline">
-              Service Public
+          <div className="flex items-center gap-2 text-sm sm:gap-3">
+            <Link to="/" className="inline-flex items-center gap-1 rounded-md border border-primary-foreground/40 px-2.5 py-1.5 font-semibold hover:bg-primary-foreground/10" title="Retour au Service Public">
+              ← <span className="sm:hidden">Public</span><span className="hidden sm:inline">Service Public</span>
             </Link>
             <span className="hidden opacity-80 md:inline">{email}</span>
             <button
@@ -684,12 +684,13 @@ function Espace({ email }: { email: string }) {
                           </button>
                           <button
                             type="button"
+                            disabled={!droitModification(c).ok}
                             onClick={() => {
                               setEditing(c);
                               setShowForm(true);
                             }}
-                            title="Modifier les données ou joindre un PDF"
-                            className="inline-flex items-center gap-1 rounded-md bg-uk-gold/20 px-2.5 py-1.5 text-xs font-semibold text-uk-navy transition hover:bg-uk-gold"
+                            title={droitModification(c).raison}
+                            className="inline-flex items-center gap-1 rounded-md bg-uk-gold/20 px-2.5 py-1.5 text-xs font-semibold text-uk-navy transition hover:bg-uk-gold disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-uk-gold/20"
                           >
                             <Pencil className="h-3.5 w-3.5" /> Modifier
                           </button>
@@ -742,8 +743,9 @@ function Espace({ email }: { email: string }) {
           poles={poles}
           initial={editing}
           onClose={() => setShowForm(false)}
-          onSaved={() => {
+          onSaved={(info) => {
             setShowForm(false);
+            if (info) setInfoCreation(info);
             setEditing(null);
             load();
           }}
@@ -773,21 +775,37 @@ function Espace({ email }: { email: string }) {
           </div>
         </div>
       )}
+      {infoCreation && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={() => setInfoCreation(null)}>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-heading text-lg font-bold text-uk-green">✓ Convention enregistrée avec succès</h2>
+            <dl className="mt-3 space-y-1 text-sm">
+              <div><dt className="inline font-semibold">Partenaire : </dt><dd className="inline">{infoCreation.nom}</dd></div>
+              <div><dt className="inline font-semibold">Pôle : </dt><dd className="inline">{infoCreation.pole}</dd></div>
+              <div><dt className="inline font-semibold">Échéance : </dt><dd className="inline">{formatDate(infoCreation.echeance)}</dd></div>
+              <div><dt className="inline font-semibold">Alerte : </dt><dd className="inline">{infoCreation.alerte}</dd></div>
+            </dl>
+            <div className="mt-4 rounded-lg bg-emerald-100 p-3 text-sm text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">
+              <p className="font-semibold">⏱ Fenêtre de correction libre : 48 heures</p>
+              <p>Jusqu'au {infoCreation.finCorrection.toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}, vous pouvez corriger l'ensemble du formulaire.</p>
+            </div>
+            <div className="mt-3 rounded-lg bg-sky-100 p-3 text-sm text-sky-900 dark:bg-sky-950/60 dark:text-sky-200">
+              <p className="font-semibold">Après 48 heures : dossier stabilisé</p>
+              <p>Partenaire, pays, pôle, cadre juridique, dates, alerte et reconduction sont verrouillés. Seuls les éléments laissés vides aujourd'hui (PDF, ville, thématique, préavis) pourront être complétés, une seule fois. Toute prolongation passe par un Avenant.</p>
+            </div>
+            <div className="mt-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+              <p className="font-semibold">Dès que l'alerte sonne : gel total</p>
+              <p>Plus aucune modification, même des éléments optionnels. Seuls « Reporter » ou « Avenant » restent possibles.</p>
+            </div>
+            <button type="button" onClick={() => setInfoCreation(null)} className="mt-5 w-full rounded-lg bg-uk-blue px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110">J'ai pris note</button>
+          </div>
+        </div>
+      )}
       <InstallPwa />
     </div>
   );
 }
 
-const DUREES = [3, 6, 9, 12, 14, 15, 18, 24, 30, 36, 48, 60, 72, 120];
-function libelleDuree(m: number) {
-  if (m <= 0) return "—";
-  const a = Math.floor(m / 12);
-  const r = m % 12;
-  const parts = [];
-  if (a) parts.push(`${a} an${a > 1 ? "s" : ""}`);
-  if (r) parts.push(`${r} mois`);
-  return parts.join(" ");
-}
 
 function Kpi({
   icon: Icon,
