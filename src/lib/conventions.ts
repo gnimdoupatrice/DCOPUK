@@ -370,7 +370,7 @@ export function libelleDureeDetaillee(d: { ans: number; mois: number; jours: num
   if (d.mois) p.push(`${d.mois} mois`);
   if (d.jours) p.push(`${d.jours} jour${d.jours > 1 ? "s" : ""}`);
   if (!p.length) return "—";
-  return p.length === 1 ? p[0] : p.slice(0, -1).join(", ") + " et " + p[p.length - 1];
+  return p.length === 1 ? p[0]! : p.slice(0, -1).join(", ") + " et " + p[p.length - 1]!;
 }
 const fmtDH = (d: Date) =>
   d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
