@@ -863,27 +863,57 @@ function ConventionForm({
   const cadres = CADRES_PAR_POLE[poleFinal] ?? [];
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
+  // Sas de modification
+  const sas: SasModification = initial ? sasModification(initial) : "libre";
+  const stabilise = sas === "stabilise";
+  const gele = sas === "gele";
+  const lockCore = stabilise || gele;
+  const lockVille = gele || (stabilise && !!initial?.partenaire_ville);
+  const lockThem = gele || (stabilise && !!initial?.thematique);
+  const lockPreavis = gele || (stabilise && initial?.preavis_mois != null);
+  const lockPdf = gele || (!!initial?.pdf_path && sas !== "libre");
+  const heuresRestantes = initial ? Math.max(0, Math.ceil((finFenetreCorrection(initial).getTime() - Date.now()) / 3600000)) : 48;
+
+  const detail = dureeDetaillee(signature, dateEcheance);
   const dureeCalculee = signature && dateEcheance ? dureeEntreMois(signature, dateEcheance) : 0;
   const momentAlerte = dateAlerte && heureAlerte ? momentAlerteConvention({ date_alerte: dateAlerte, heure_alerte: heureAlerte } as Convention) : null;
   const statut = dateEcheance ? calculerStatut(dateEcheance, momentAlerte) : null;
 
-  const [dureeChoix, setDureeChoix] = useState("");
+  const initDet = initial ? dureeDetaillee(initial.date_signature, initial.date_echeance) : null;
+  const [dureeAns, setDureeAns] = useState(initDet ? String(initDet.ans) : "");
+  const [dureeMois, setDureeMois] = useState(initDet ? String(initDet.mois) : "");
+  function appliquerDuree(a: string, m: string, sig = signature) {
+    setDureeAns(a);
+    setDureeMois(m);
+    const total = Number(a || 0) * 12 + Number(m || 0);
+    if (sig && total > 0) setDateEcheance(decalerDate(sig, total));
+  }
+  function saisirEcheance(v: string) {
+    setDateEcheance(v);
+    const d = dureeDetaillee(signature, v);
+    if (d) {
+      setDureeAns(String(Math.min(d.ans, 10)));
+      setDureeMois(String(d.mois));
+    }
+  }
+
   const [alerteChoix, setAlerteChoix] = useState("");
   function appliquerAlerte(v: string) {
     setAlerteChoix(v);
     if (!v || !dateEcheance) return;
     if (v === "preavis") {
-      if (preavis.trim()) setDateAlerte(ajouterMois(dateEcheance, -Number(preavis)));
-    } else {
-      const d = new Date(dateEcheance + "T00:00:00");
-      d.setDate(d.getDate() - Number(v));
-      setDateAlerte(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      if (preavis.trim()) setDateAlerte(decalerDate(dateEcheance, -Number(preavis)));
+    } else if (v.startsWith("j")) {
+      setDateAlerte(decalerDate(dateEcheance, 0, -Number(v.slice(1))));
+    } else if (v.startsWith("m")) {
+      setDateAlerte(decalerDate(dateEcheance, -Number(v.slice(1))));
     }
     if (!heureAlerte) setHeureAlerte("08:00");
   }
   const alerteErreur = (() => {
     if (!dateAlerte || !heureAlerte) return null;
     if (dateEcheance && dateAlerte > dateEcheance) return "L'alerte ne peut pas être fixée après la date de fin de l'accord.";
+    if (signature && dateAlerte < signature) return "L'alerte ne peut pas être antérieure à la date de signature.";
     const changee = !initial || initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte;
     if (changee && new Date(`${dateAlerte}T${heureAlerte}`).getTime() <= Date.now()) return "L'alerte ne peut pas être fixée dans le passé.";
     return null;
