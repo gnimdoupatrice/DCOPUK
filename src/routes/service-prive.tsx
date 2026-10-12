@@ -38,6 +38,13 @@ import {
   calculerStatut,
   statutConvention,
   momentAlerteConvention,
+  sasModification,
+  finFenetreCorrection,
+  dureeDetaillee,
+  libelleDureeDetaillee,
+  decalerDate,
+  droitModification,
+  type SasModification,
   dateLimitePreavis,
   dureeEntreMois,
   formatDate,
@@ -823,6 +830,10 @@ function Kpi({
 
 /* ---------------- Formulaire (entonnoir) ---------------- */
 
+type InfoCreation = { nom: string; pole: string; echeance: string; alerte: string; finCorrection: Date };
+const lk = (l: boolean) => (l ? " cursor-not-allowed bg-muted opacity-70" : "");
+const cad = (l: boolean) => (l ? " 🔒" : "");
+
 function ConventionForm({
   poles,
   initial,
@@ -832,7 +843,7 @@ function ConventionForm({
   poles: string[];
   initial?: Convention | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (info: InfoCreation | null) => void;
 }) {
   const initCadres = initial ? (CADRES_PAR_POLE[initial.pole] ?? []) : [];
   const initCadreConnu = !!initial && initCadres.includes(initial.cadre_juridique);
@@ -1076,7 +1087,7 @@ function ConventionForm({
         )}
 
         <Step n={1} title="Pôle opérationnel">
-          <select required value={pole} onChange={(e) => { setPole(e.target.value); setCadre(""); }} className={inputCls}>
+          <select required disabled={lockCore} value={pole} onChange={(e) => { setPole(e.target.value); setCadre(""); }} className={inputCls + lk(lockCore)}>
             <option value="">— Choisir un pôle —</option>
             {poles.map((p) => (
               <option key={p}>{p}</option>
