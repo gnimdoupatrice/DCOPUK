@@ -1091,7 +1091,7 @@ function ConventionForm({
         {poleFinal && (
           <Step n={2} title="Cadre juridique / type d'accord">
             {cadres.length > 0 && (
-              <select required value={cadre} onChange={(e) => setCadre(e.target.value)} className={inputCls}>
+              <select required disabled={lockCore} value={cadre} onChange={(e) => setCadre(e.target.value)} className={inputCls + lk(lockCore)}>
                 <option value="">— Choisir un type d'accord —</option>
                 {cadres.map((c) => (
                   <option key={c}>{c}</option>
@@ -1100,7 +1100,7 @@ function ConventionForm({
               </select>
             )}
             {(cadre === "__libre" || cadres.length === 0) && (
-              <input required placeholder="Préciser le type d'accord" value={cadreLibre} onChange={(e) => setCadreLibre(e.target.value)} className={inputCls} />
+              <input required disabled={lockCore} placeholder="Préciser le type d'accord" value={cadreLibre} onChange={(e) => setCadreLibre(e.target.value)} className={inputCls + lk(lockCore)} />
             )}
           </Step>
         )}
@@ -1108,71 +1108,89 @@ function ConventionForm({
         {cadreFinal && (
           <Step n={3} title="Informations contractuelles">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Partenaire contractant *" className="sm:col-span-3">
-                <input required value={nom} onChange={(e) => setNom(e.target.value)} className={inputCls} />
+              <Field label={"Partenaire contractant *" + cad(lockCore)} className="sm:col-span-3">
+                <input required disabled={lockCore} value={nom} onChange={(e) => setNom(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Pays *">
-                <input required value={pays} onChange={(e) => setPays(e.target.value)} className={inputCls} />
+              <Field label={"Pays *" + cad(lockCore)}>
+                <input required disabled={lockCore} value={pays} onChange={(e) => setPays(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Ville" className="sm:col-span-2">
-                <input value={ville} onChange={(e) => setVille(e.target.value)} className={inputCls} />
+              <Field label={"Ville" + cad(lockVille)} className="sm:col-span-2">
+                <input disabled={lockVille} value={ville} onChange={(e) => setVille(e.target.value)} className={inputCls + lk(lockVille)} />
               </Field>
-              <Field label="Thématique / domaine d'intervention" className="sm:col-span-3">
-                <input value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls} />
-              </Field>
-
-              <Field label="Date de signature *">
-                <input type="date" required value={signature} onChange={(e) => { setSignature(e.target.value); if (dureeChoix && e.target.value) setDateEcheance(ajouterMois(e.target.value, Number(dureeChoix))); }} className={inputCls} />
-              </Field>
-              <Field label="Durée de l'accord">
-                <select value={dureeChoix} onChange={(e) => { setDureeChoix(e.target.value); if (e.target.value && signature) setDateEcheance(ajouterMois(signature, Number(e.target.value))); }} className={inputCls}>
-                  <option value="">Saisie libre de la date de fin</option>
-                  {DUREES.map((m) => (
-                    <option key={m} value={m}>{libelleDuree(m)}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Date de fin de l'accord (échéance) *">
-                <input type="date" required value={dateEcheance} onChange={(e) => { setDateEcheance(e.target.value); setDureeChoix(""); }} className={inputCls} />
-              </Field>
-              <Field label="Durée (calculée)" className="sm:col-span-3">
-                <input readOnly value={signature && dateEcheance ? libelleDuree(dureeCalculee) : "—"} className={inputCls + " bg-muted font-medium text-uk-blue"} />
+              <Field label={"Thématique / domaine d'intervention" + cad(lockThem)} className="sm:col-span-3">
+                <input disabled={lockThem} value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls + lk(lockThem)} />
               </Field>
 
-              <Field label="Préavis de dénonciation (mois, optionnel)">
-                <input type="number" min={0} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls} />
+              <Field label={"Date de signature *" + cad(lockCore)}>
+                <input type="date" required disabled={lockCore} value={signature} onChange={(e) => { setSignature(e.target.value); appliquerDuree(dureeAns, dureeMois, e.target.value); }} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Reconduction" className="sm:col-span-2">
-                <select value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls}>
+              <div className="block text-xs font-medium text-muted-foreground">
+                Durée convenue{cad(lockCore)}
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <select aria-label="Années" disabled={lockCore} value={dureeAns} onChange={(e) => appliquerDuree(e.target.value, dureeMois)} className={inputCls.replace("mt-1 ", "") + lk(lockCore)}>
+                    <option value="">Années</option>
+                    {Array.from({ length: 11 }, (_, i) => (
+                      <option key={i} value={i}>{i} an{i > 1 ? "s" : ""}</option>
+                    ))}
+                  </select>
+                  <select aria-label="Mois" disabled={lockCore} value={dureeMois} onChange={(e) => appliquerDuree(dureeAns, e.target.value)} className={inputCls.replace("mt-1 ", "") + lk(lockCore)}>
+                    <option value="">Mois</option>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>{i} mois</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <Field label={"Date de fin de l'accord (échéance) *" + cad(lockCore)}>
+                <input type="date" required disabled={lockCore} min={signature || undefined} value={dateEcheance} onChange={(e) => saisirEcheance(e.target.value)} className={inputCls + lk(lockCore)} />
+              </Field>
+              <p className="sm:col-span-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Durée réelle : <span className="font-semibold text-uk-blue">{libelleDureeDetaillee(detail)}</span>
+                <span className="ml-1">— choisissez années + mois, ou saisissez librement la date de fin au calendrier.</span>
+              </p>
+
+              <Field label={"Préavis de dénonciation (mois, optionnel)" + cad(lockPreavis)}>
+                <input type="number" min={0} disabled={lockPreavis} value={preavis} placeholder="Optionnel" onChange={(e) => setPreavis(e.target.value)} className={inputCls + lk(lockPreavis)} />
+              </Field>
+              <Field label={"Reconduction" + cad(lockCore)} className="sm:col-span-2">
+                <select disabled={lockCore} value={reconduction} onChange={(e) => setReconduction(e.target.value)} className={inputCls + lk(lockCore)}>
                   <option>Non reconductible</option>
                   <option>Expresse</option>
                   <option>Tacite</option>
                 </select>
               </Field>
 
-              <Field label="Programmer l'alerte" className="sm:col-span-3">
-                <select value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls}>
-                  <option value="">Date personnalisée</option>
-                  <option value="preavis" disabled={!preavis.trim()}>À la date limite du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
-                  <option value="180">6 mois avant la fin</option>
-                  <option value="90">3 mois avant la fin (J-90)</option>
-                  <option value="60">2 mois avant la fin (J-60)</option>
-                  <option value="30">1 mois avant la fin (J-30)</option>
-                  <option value="15">15 jours avant la fin</option>
-                  <option value="7">1 semaine avant la fin</option>
+              <Field label="Programmation assistée de l'alerte" className="sm:col-span-3">
+                <select disabled={lockCore} value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls + lk(lockCore)}>
+                  <option value="">Saisie libre / date personnalisée</option>
+                  <optgroup label="Repère contractuel">
+                    <option value="preavis" disabled={!preavis.trim()}>À l'échéance du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
+                  </optgroup>
+                  <optgroup label="Semaines avant la fin">
+                    <option value="j7">1 semaine avant la fin (J-7)</option>
+                    <option value="j14">2 semaines avant la fin (J-14)</option>
+                    <option value="j21">3 semaines avant la fin (J-21)</option>
+                  </optgroup>
+                  <optgroup label="Mois avant la fin">
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={`m${m}`}>
+                        {m === 12 ? "12 mois (1 an)" : `${m} mois`} avant la fin{m === 3 ? " — trimestre" : m === 6 ? " — semestre" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </Field>
-              <Field label="Date de l'alerte *" className="sm:col-span-2">
-                <input type="date" required value={dateAlerte} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls} />
+              <Field label={"Date de l'alerte *" + cad(lockCore)} className="sm:col-span-2">
+                <input type="date" required disabled={lockCore} value={dateAlerte} min={signature || undefined} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls + lk(lockCore)} />
               </Field>
-              <Field label="Heure de l'alerte *">
-                <input type="time" required value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls} />
+              <Field label={"Heure de l'alerte *" + cad(lockCore)}>
+                <input type="time" required disabled={lockCore} value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls + lk(lockCore)} />
               </Field>
-              {alerteErreur && <p className="sm:col-span-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">{alerteErreur}</p>}
+              {alerteErreur && !lockCore && <p className="sm:col-span-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">{alerteErreur}</p>}
 
 
-              <Field label={initial?.pdf_path ? "Remplacer le PDF officiel scanné" : "Document PDF officiel scanné (optionnel)"} className="sm:col-span-3">
-                <input type="file" accept="application/pdf" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls} />
+              <Field label={(initial?.pdf_path ? (lockPdf ? "PDF officiel déjà joint" : "Remplacer le PDF officiel scanné") : "Document PDF officiel scanné (optionnel)") + cad(lockPdf)} className="sm:col-span-3">
+                <input type="file" accept="application/pdf" disabled={lockPdf} onChange={(e) => setPdf(e.target.files?.[0] ?? null)} className={inputCls + lk(lockPdf)} />
               </Field>
             </div>
             {statut && (
