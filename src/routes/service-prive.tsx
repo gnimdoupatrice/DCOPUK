@@ -426,8 +426,8 @@ function Espace({ email }: { email: string }) {
       <header className="bg-uk-blue text-primary-foreground shadow">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-card">
-              <img src={ukEmblem} alt="Université de Kara" className="h-10 w-auto" />
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-card p-1.5">
+              <img src={ukEmblem} alt="Université de Kara" className="h-full w-full object-contain" />
             </span>
             <div>
               <p className="font-display text-xl font-bold">Espace Privé DCOP</p>
