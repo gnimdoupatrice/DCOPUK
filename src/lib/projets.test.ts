@@ -44,7 +44,7 @@ describe("points focaux", () => {
 
 describe("compte à rebours de l'alerte", () => {
   it("1 an, 1 mois, 2 semaines, 3 jours avant le 31/12/2028", () => {
-    expect(dateDepuisRebours("2028-12-31", { ans: 1, mois: 1, semaines: 2, jours: 3 })).toBe("2027-11-14");
+    expect(dateDepuisRebours("2028-12-31", { ans: 1, mois: 1, semaines: 2, jours: 3 })).toBe("2027-11-13");
   });
   it("1 mois avant le 31 mars donne la fin février", () => {
     expect(dateDepuisRebours("2027-03-31", { ans: 0, mois: 1, semaines: 0, jours: 0 })).toBe("2027-02-28");
