@@ -34,7 +34,7 @@ export function ProjetsEditor({
   /** index = null pour un ajout */
   onSave: (p: ProjetSaisie, index: number | null) => Promise<string | null> | string | null;
   onRemove: (item: Item, index: number) => void;
-  busy?: boolean;
+  busy?: boolean | undefined;
   ouvrirAuDepart?: boolean;
 }) {
   const [edition, setEdition] = useState<number | "new" | null>(ouvrirAuDepart ? "new" : null);

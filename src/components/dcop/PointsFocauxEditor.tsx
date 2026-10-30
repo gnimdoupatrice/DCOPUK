@@ -16,7 +16,7 @@ export function PointsFocauxEditor({
   items: Item[];
   onAdd: (p: PointFocalSaisie) => Promise<string | null> | string | null;
   onRemove: (item: Item, index: number) => void;
-  busy?: boolean;
+  busy?: boolean | undefined;
 }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -43,7 +43,7 @@ function Colonne({
   items: Item[];
   onAdd: (p: PointFocalSaisie) => Promise<string | null> | string | null;
   onRemove: (item: Item, index: number) => void;
-  busy?: boolean;
+  busy?: boolean | undefined;
 }) {
   const [ouvert, setOuvert] = useState(false);
   const [p, setP] = useState<PointFocalSaisie>(pointFocalVide(type));
