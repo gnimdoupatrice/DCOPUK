@@ -27,6 +27,24 @@ import {
 import ukEmblem from "@/assets/uk-emblem.png";
 import { supabase } from "@/lib/supabase";
 import { ConventionDrawer, envoyerPdf, logHistorique } from "@/components/dcop/ConventionDrawer";
+import { EmailsAlerteInput } from "@/components/dcop/EmailsAlerteInput";
+import { PointsFocauxEditor } from "@/components/dcop/PointsFocauxEditor";
+import { ProjetsEditor } from "@/components/dcop/ProjetsEditor";
+import {
+  LIMITES_REBOURS,
+  REBOURS_VIDE,
+  bornesAlerte,
+  controlerDateAlerte,
+  dateDepuisRebours,
+  formatMontant,
+  reboursEstVide,
+  resumerProjets,
+  validerPointFocal,
+  validerProjet,
+  type PointFocalSaisie,
+  type ProjetSaisie,
+  type Rebours,
+} from "@/lib/projets";
 import {
   CADRES_PAR_POLE,
   DEFAULT_POLES,
@@ -180,6 +198,7 @@ function Espace({ email }: { email: string }) {
   const [editing, setEditing] = useState<Convention | null>(null);
   const [infoCreation, setInfoCreation] = useState<InfoCreation | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [resumeProjets, setResumeProjets] = useState<Map<string, { count: number; totalFcfa: number }>>(new Map());
   const [showArchived, setShowArchived] = useState(false);
   const [q, setQ] = useState("");
   const [fPole, setFPole] = useState("");
@@ -222,10 +241,12 @@ function Espace({ email }: { email: string }) {
 
   async function load() {
     setLoading(true);
-    const [c, p] = await Promise.all([
+    const [c, p, pj] = await Promise.all([
       supabase.from("conventions").select("*"),
       supabase.from("poles").select("nom").order("created_at"),
+      supabase.from("convention_projets").select("convention_id, budget_montant, budget_devise"),
     ]);
+    if (!pj.error) setResumeProjets(resumerProjets((pj.data ?? []) as Parameters<typeof resumerProjets>[0]));
     if (c.error) setLoadError("Impossible de charger le registre. Vérifiez que les tables ont bien été créées.");
     else {
       setLoadError(null);
@@ -237,9 +258,16 @@ function Espace({ email }: { email: string }) {
         setResumeConnexion(true);
       }
     }
-    if (!p.error && p.data?.length) {
-      setPoles(Array.from(new Set([...DEFAULT_POLES, ...p.data.map((r) => r.nom as string)])));
-    }
+    // Pôles : valeurs par défaut + table des pôles + pôles déjà utilisés dans le registre
+    setPoles(
+      Array.from(
+        new Set([
+          ...DEFAULT_POLES,
+          ...(!p.error && p.data ? p.data.map((r) => r.nom as string) : []),
+          ...((c.data ?? []) as Convention[]).map((x) => x.pole).filter(Boolean),
+        ]),
+      ),
+    );
     setLoading(false);
   }
 
@@ -287,6 +315,8 @@ function Espace({ email }: { email: string }) {
     }
     try {
       await supabase.from("convention_historique").delete().eq("convention_id", id);
+      await supabase.from("convention_points_focaux").delete().eq("convention_id", id);
+      await supabase.from("convention_projets").delete().eq("convention_id", id);
       if (pdfPath) {
         await supabase.storage.from("conventions-pdf").remove([pdfPath]);
       }
@@ -384,6 +414,8 @@ function Espace({ email }: { email: string }) {
       "Préavis (mois)",
       "Reconduction",
       "Archivée",
+      "Nombre de projets",
+      "Budget total projets (FCFA)",
     ];
 
     const escapeCsv = (str: string | number | null | undefined) => {
@@ -407,6 +439,8 @@ function Espace({ email }: { email: string }) {
         escapeCsv(c.preavis_mois),
         escapeCsv(c.reconduction),
         escapeCsv(c.archived ? "Oui" : "Non"),
+        escapeCsv(resumeProjets.get(c.id)?.count ?? 0),
+        escapeCsv(resumeProjets.get(c.id)?.totalFcfa ?? 0),
       ].join(";")
     );
 
@@ -597,13 +631,13 @@ function Espace({ email }: { email: string }) {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                       Chargement…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                       Aucune convention à afficher.
                     </td>
                   </tr>
