@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   Bell,
+  Briefcase,
   Download,
   Eye,
   FileSignature,
@@ -671,6 +672,23 @@ function Espace({ email }: { email: string }) {
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {[c.partenaire_ville, c.partenaire_pays].filter(Boolean).join(", ")}
                         </p>
+                        {(() => {
+                          const rp = resumeProjets.get(c.id);
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedId(c.id);
+                              }}
+                              title={rp ? "Voir les projets" : "Ajouter un projet"}
+                              className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${rp ? "bg-uk-green/15 text-uk-green hover:bg-uk-green/25" : "border border-dashed border-border text-muted-foreground hover:border-uk-blue hover:text-uk-blue"}`}
+                            >
+                              <Briefcase className="h-3 w-3" />
+                              {rp ? `${rp.count} projet${rp.count > 1 ? "s" : ""} · ${formatMontant(rp.totalFcfa)}` : "+ Projet"}
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-4">
                         <p className="font-medium text-foreground">{c.pole}</p>
