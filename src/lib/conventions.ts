@@ -53,6 +53,7 @@ export interface Convention {
   seuil_alerte_jours?: number | null;
   date_alerte?: string | null;
   heure_alerte?: string | null;
+  emails_alerte?: string[] | null;
   alarme_arretee_le?: string | null;
   alarme_reportee_jusqu_a?: string | null;
 }
