@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Archive, FilePlus2, FileText, History, Pencil, Printer, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { Archive, Briefcase, Download, FilePlus2, FileText, History, Pencil, Users, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PointsFocauxEditor } from "@/components/dcop/PointsFocauxEditor";
+import { ProjetsEditor } from "@/components/dcop/ProjetsEditor";
+import { telechargerFichePdf } from "@/lib/fiche-pdf";
+import { validerPointFocal, validerProjet, type ConventionProjet, type PointFocal } from "@/lib/projets";
 import {
   PDF_BUCKET,
   PDF_MAX_OCTETS,
@@ -72,6 +76,63 @@ export function ConventionDrawer({
     if (nouvelleEcheance) setAvDateAlerte(ajouterMois(nouvelleEcheance, -3));
   }, [nouvelleEcheance]);
 
+  // Suivi opérationnel : non soumis au verrou des 48 h
+  const [points, setPoints] = useState<PointFocal[]>([]);
+  const [projets, setProjets] = useState<ConventionProjet[]>([]);
+  async function loadSuivi() {
+    const [a, b] = await Promise.all([
+      supabase.from("convention_points_focaux").select("*").eq("convention_id", c.id).order("created_at"),
+      supabase.from("convention_projets").select("*").eq("convention_id", c.id).order("created_at"),
+    ]);
+    setPoints((a.data ?? []) as PointFocal[]);
+    setProjets((b.data ?? []) as ConventionProjet[]);
+  }
+  async function ajouterPoint(p: Omit<PointFocal, "id" | "convention_id" | "created_at">): Promise<string | null> {
+    const err = validerPointFocal(p);
+    if (err) return err;
+    const { error } = await supabase.from("convention_points_focaux").insert({ ...p, convention_id: c.id });
+    if (error) return error.message;
+    if (p.recoit_alertes && p.email) {
+      const em = p.email.trim().toLowerCase();
+      const liste = c.emails_alerte ?? [];
+      if (!liste.includes(em)) await supabase.from("conventions").update({ emails_alerte: [...liste, em] }).eq("id", c.id);
+    }
+    await logHistorique(c.id, "Point focal ajouté", `${p.nom} ${p.prenom}`);
+    await loadSuivi();
+    await loadHistorique();
+    onChanged();
+    return null;
+  }
+  async function retirerPoint(p: { id?: string; nom: string; prenom: string }) {
+    if (!p.id || !window.confirm(`Retirer le point focal ${p.nom} ${p.prenom} ?`)) return;
+    await supabase.from("convention_points_focaux").delete().eq("id", p.id);
+    await logHistorique(c.id, "Point focal retiré", `${p.nom} ${p.prenom}`);
+    await loadSuivi();
+    await loadHistorique();
+  }
+  async function enregistrerProjet(p: Omit<ConventionProjet, "id" | "convention_id" | "created_at">, i: number | null): Promise<string | null> {
+    const err = validerProjet(p);
+    if (err) return err;
+    const res =
+      i === null
+        ? await supabase.from("convention_projets").insert({ ...p, convention_id: c.id })
+        : await supabase.from("convention_projets").update(p).eq("id", projets[i]!.id);
+    if (res.error) return res.error.message;
+    await logHistorique(c.id, i === null ? "Projet ajouté" : "Projet modifié", p.titre);
+    await loadSuivi();
+    await loadHistorique();
+    onChanged();
+    return null;
+  }
+  async function retirerProjet(p: { id?: string; titre: string }) {
+    if (!p.id || !window.confirm(`Supprimer le projet « ${p.titre} » ?`)) return;
+    await supabase.from("convention_projets").delete().eq("id", p.id);
+    await logHistorique(c.id, "Projet supprimé", p.titre);
+    await loadSuivi();
+    await loadHistorique();
+    onChanged();
+  }
+
   async function loadHistorique() {
     const { data } = await supabase
       .from("convention_historique")
@@ -83,6 +144,7 @@ export function ConventionDrawer({
 
   useEffect(() => {
     loadHistorique();
+    loadSuivi();
     setPanel(null);
     setError(null);
   }, [c.id]);
@@ -167,6 +229,8 @@ export function ConventionDrawer({
     }
     setBusy(true);
     await supabase.from("convention_historique").delete().eq("convention_id", c.id);
+    await supabase.from("convention_points_focaux").delete().eq("convention_id", c.id);
+    await supabase.from("convention_projets").delete().eq("convention_id", c.id);
     if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
     const { error } = await supabase.from("conventions").delete().eq("id", c.id);
     setBusy(false);
@@ -211,11 +275,12 @@ export function ConventionDrawer({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => window.print()}
-              title="Imprimer la fiche officielle"
+              onClick={() => telechargerFichePdf(c, points, projets).catch(() => setError("Génération du PDF impossible."))}
+              title="Télécharger la fiche officielle (PDF)"
+              aria-label="Télécharger la fiche officielle (PDF)"
               className="rounded-md border border-white/20 p-1.5 hover:bg-white/10"
             >
-              <Printer className="h-4 w-4" />
+              <Download className="h-4 w-4" />
             </button>
             <button onClick={onClose} aria-label="Fermer" className="opacity-80 hover:opacity-100">
               <X className="h-5 w-5" />
@@ -271,6 +336,7 @@ export function ConventionDrawer({
               value={c.preavis_mois == null ? "Non renseigné" : `${c.preavis_mois} mois (avant le ${formatDate(ajouterMois(c.date_echeance, -c.preavis_mois) || c.date_echeance)})`}
             />
             <Item label="Type de reconduction" value={c.reconduction} />
+            <Item label="E-mails d'alerte" value={(c.emails_alerte ?? []).join(", ") || "—"} full />
             <Item label="Enregistrée le" value={new Date(c.created_at).toLocaleDateString("fr-FR")} />
             {c.archived && (
               <Item
@@ -280,6 +346,22 @@ export function ConventionDrawer({
               />
             )}
           </dl>
+
+          {/* Points focaux */}
+          <div className="rounded-xl border border-border p-4">
+            <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Users className="h-4 w-4 text-uk-blue" /> Points focaux bipartites ({points.length})
+            </p>
+            <PointsFocauxEditor items={points} onAdd={ajouterPoint} onRemove={(p) => retirerPoint(p)} />
+          </div>
+
+          {/* Projets */}
+          <div className="rounded-xl border border-border p-4">
+            <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Briefcase className="h-4 w-4 text-uk-green" /> Projets & Réalisations ({projets.length})
+            </p>
+            <ProjetsEditor items={projets} onSave={enregistrerProjet} onRemove={(p) => retirerProjet(p)} />
+          </div>
 
           {/* PDF */}
           <div className="rounded-xl border border-border p-4">
