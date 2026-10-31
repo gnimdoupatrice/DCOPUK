@@ -937,6 +937,10 @@ function ConventionForm({
   const [preavis, setPreavis] = useState<string>(initial?.preavis_mois != null ? String(initial.preavis_mois) : "");
   const [reconduction, setReconduction] = useState(initial?.reconduction ?? "Non reconductible");
   const [pdf, setPdf] = useState<File | null>(null);
+  const [emailsAlerte, setEmailsAlerte] = useState<string[]>(initial?.emails_alerte ?? []);
+  const [pointsFocaux, setPointsFocaux] = useState<PointFocalSaisie[]>([]);
+  const [projets, setProjets] = useState<ProjetSaisie[]>([]);
+  const [rebours, setRebours] = useState<Rebours>(REBOURS_VIDE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -978,24 +982,20 @@ function ConventionForm({
     }
   }
 
-  const [alerteChoix, setAlerteChoix] = useState("");
-  function appliquerAlerte(v: string) {
-    setAlerteChoix(v);
-    if (!v || !dateEcheance) return;
-    if (v === "preavis") {
-      if (preavis.trim()) setDateAlerte(decalerDate(dateEcheance, -Number(preavis)));
-    } else if (v.startsWith("j")) {
-      setDateAlerte(decalerDate(dateEcheance, 0, -Number(v.slice(1))));
-    } else if (v.startsWith("m")) {
-      setDateAlerte(decalerDate(dateEcheance, -Number(v.slice(1))));
-    }
+  const bornes = bornesAlerte(signature, dateEcheance);
+  function appliquerRebours(r: Rebours) {
+    setRebours(r);
+    if (reboursEstVide(r) || !dateEcheance) return;
+    setDateAlerte(dateDepuisRebours(dateEcheance, r));
     if (!heureAlerte) setHeureAlerte("08:00");
   }
+  const reboursErreur = !reboursEstVide(rebours) && dateEcheance ? controlerDateAlerte(dateDepuisRebours(dateEcheance, rebours), signature, dateEcheance) : null;
   const alerteErreur = (() => {
     if (!dateAlerte || !heureAlerte) return null;
     if (dateEcheance && dateAlerte > dateEcheance) return "L'alerte ne peut pas être fixée après la date de fin de l'accord.";
     if (signature && dateAlerte < signature) return "L'alerte ne peut pas être antérieure à la date de signature.";
     const changee = !initial || initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte;
+    if (changee && bornes.max && dateAlerte > bornes.max) return "L'alerte doit être programmée au plus tard la veille de la fin de la convention.";
     if (changee && new Date(`${dateAlerte}T${heureAlerte}`).getTime() <= Date.now()) return "L'alerte ne peut pas être fixée dans le passé.";
     return null;
   })();
@@ -1022,6 +1022,7 @@ function ConventionForm({
       if (!lockVille && ville.trim()) { maj["partenaire_ville"] = ville.trim(); completes.push("ville"); }
       if (!lockThem && thematique.trim()) { maj["thematique"] = thematique.trim(); completes.push("thématique"); }
       if (!lockPreavis && preavis.trim()) { maj["preavis_mois"] = Math.round(Number(preavis)); completes.push("préavis"); }
+      if (JSON.stringify(emailsAlerte) !== JSON.stringify(initial.emails_alerte ?? [])) { maj["emails_alerte"] = emailsAlerte; completes.push("e-mails d'alerte"); }
       if (!Object.keys(maj).length && !pdf) {
         setError("Aucun élément nouveau à compléter.");
         return;
@@ -1089,6 +1090,7 @@ function ConventionForm({
       date_alerte: dateAlerte,
       seuil_alerte_jours: null,
       heure_alerte: heureAlerte,
+      emails_alerte: emailsAlerte,
     };
     if (alerteChangee) {
       payload["alarme_arretee_le"] = null;
@@ -1104,6 +1106,19 @@ function ConventionForm({
       return;
     }
     const id = res.data.id as string;
+    // Enregistrement coordonné : points focaux puis projets (création uniquement)
+    const avertissements: string[] = [];
+    if (!initial && pointsFocaux.length) {
+      const { error: e1 } = await supabase.from("convention_points_focaux").insert(pointsFocaux.map((pf) => ({ ...pf, convention_id: id })));
+      if (e1) avertissements.push("points focaux : " + e1.message);
+    }
+    if (!initial && projets.length) {
+      const { error: e2 } = await supabase.from("convention_projets").insert(projets.map((pr) => ({ ...pr, convention_id: id })));
+      if (e2) avertissements.push("projets : " + e2.message);
+    }
+    if (avertissements.length) {
+      alert("Convention enregistrée, mais certains éléments n'ont pas pu être ajoutés (" + avertissements.join(" ; ") + "). Vous pourrez les ajouter depuis la fiche.");
+    }
     await logHistorique(
       id,
       initial ? "Convention modifiée (fenêtre de 48 h)" : "Convention enregistrée",
@@ -1198,6 +1213,34 @@ function ConventionForm({
               <Field label={"Ville" + cad(lockVille)} className="sm:col-span-2">
                 <input disabled={lockVille} value={ville} onChange={(e) => setVille(e.target.value)} className={inputCls + lk(lockVille)} />
               </Field>
+              <div className="sm:col-span-3">
+                {gele ? (
+                  <p className="text-xs text-muted-foreground">E-mails d'alerte : {emailsAlerte.join(", ") || "aucun"}</p>
+                ) : (
+                  <EmailsAlerteInput value={emailsAlerte} onChange={setEmailsAlerte} label="E-mail(s) du partenaire qui recevra l'alerte" />
+                )}
+              </div>
+              <div className="sm:col-span-3 rounded-lg border border-border p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-uk-blue">Points focaux bipartites</p>
+                {initial ? (
+                  <p className="text-xs text-muted-foreground">Les points focaux se gèrent depuis la fiche détaillée de la convention, à tout moment.</p>
+                ) : (
+                  <PointsFocauxEditor
+                    items={pointsFocaux}
+                    onAdd={(pf) => {
+                      const err = validerPointFocal(pf);
+                      if (err) return err;
+                      setPointsFocaux((l) => [...l, pf]);
+                      if (pf.recoit_alertes && pf.email) {
+                        const em = pf.email.trim().toLowerCase();
+                        setEmailsAlerte((l) => (l.includes(em) ? l : [...l, em]));
+                      }
+                      return null;
+                    }}
+                    onRemove={(_, i) => setPointsFocaux((l) => l.filter((__, j) => j !== i))}
+                  />
+                )}
+              </div>
               <Field label={"Thématique / domaine d'intervention" + cad(lockThem)} className="sm:col-span-3">
                 <input disabled={lockThem} value={thematique} onChange={(e) => setThematique(e.target.value)} className={inputCls + lk(lockThem)} />
               </Field>
@@ -1241,28 +1284,37 @@ function ConventionForm({
                 </select>
               </Field>
 
-              <Field label="Programmation assistée de l'alerte" className="sm:col-span-3">
-                <select disabled={lockCore} value={alerteChoix} onChange={(e) => appliquerAlerte(e.target.value)} className={inputCls + lk(lockCore)}>
-                  <option value="">Saisie libre / date personnalisée</option>
-                  <optgroup label="Repère contractuel">
-                    <option value="preavis" disabled={!preavis.trim()}>À l'échéance du préavis{preavis.trim() ? ` (${preavis} mois avant la fin)` : " (renseignez le préavis)"}</option>
-                  </optgroup>
-                  <optgroup label="Semaines avant la fin">
-                    <option value="j7">1 semaine avant la fin (J-7)</option>
-                    <option value="j14">2 semaines avant la fin (J-14)</option>
-                    <option value="j21">3 semaines avant la fin (J-21)</option>
-                  </optgroup>
-                  <optgroup label="Mois avant la fin">
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                      <option key={m} value={`m${m}`}>
-                        {m === 12 ? "12 mois (1 an)" : `${m} mois`} avant la fin{m === 3 ? " — trimestre" : m === 6 ? " — semestre" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </Field>
+              <div className="sm:col-span-3 block text-xs font-medium text-muted-foreground">
+                Programmation assistée de l'alerte (temps avant la fin)
+                <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(["ans", "mois", "semaines", "jours"] as const).map((k) => (
+                    <select
+                      key={k}
+                      aria-label={k}
+                      disabled={lockCore || !dateEcheance}
+                      value={rebours[k]}
+                      onChange={(e) => appliquerRebours({ ...rebours, [k]: Number(e.target.value) })}
+                      className={inputCls.replace("mt-1 ", "") + lk(lockCore || !dateEcheance)}
+                    >
+                      {Array.from({ length: LIMITES_REBOURS[k] + 1 }, (_, i) => (
+                        <option key={i} value={i}>
+                          {i} {k === "ans" ? (i > 1 ? "ans" : "an") : k === "mois" ? "mois" : k === "semaines" ? (i > 1 ? "semaines" : "semaine") : i > 1 ? "jours" : "jour"}
+                        </option>
+                      ))}
+                    </select>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px]">
+                  {!dateEcheance
+                    ? "Renseignez d'abord la date de fin de l'accord."
+                    : reboursEstVide(rebours)
+                      ? "Choisissez une durée, ou saisissez librement la date ci-dessous."
+                      : <>Alerte calculée : <span className="font-semibold text-uk-blue">{formatDate(dateDepuisRebours(dateEcheance, rebours))}</span></>}
+                </p>
+                {reboursErreur && !lockCore && <p className="mt-1 rounded-md bg-destructive/10 px-2 py-1 font-semibold text-destructive">{reboursErreur}</p>}
+              </div>
               <Field label={"Date de l'alerte *" + cad(lockCore)} className="sm:col-span-2">
-                <input type="date" required disabled={lockCore} value={dateAlerte} min={signature || undefined} max={dateEcheance || undefined} onChange={(e) => { setDateAlerte(e.target.value); setAlerteChoix(""); }} className={inputCls + lk(lockCore)} />
+                <input type="date" required disabled={lockCore} value={dateAlerte} min={bornes.min || undefined} max={bornes.max || undefined} onChange={(e) => { setDateAlerte(e.target.value); setRebours(REBOURS_VIDE); }} className={inputCls + lk(lockCore)} />
               </Field>
               <Field label={"Heure de l'alerte *" + cad(lockCore)}>
                 <input type="time" required disabled={lockCore} value={heureAlerte} onChange={(e) => setHeureAlerte(e.target.value)} className={inputCls + lk(lockCore)} />
@@ -1282,6 +1334,21 @@ function ConventionForm({
                 </span>
               </p>
             )}
+          </Step>
+        )}
+
+        {cadreFinal && !initial && (
+          <Step n={4} title="Projets & Réalisations issus de la convention (optionnel)">
+            <ProjetsEditor
+              items={projets}
+              onSave={(pr, i) => {
+                const err = validerProjet(pr);
+                if (err) return err;
+                setProjets((l) => (i === null ? [...l, pr] : l.map((x, j) => (j === i ? pr : x))));
+                return null;
+              }}
+              onRemove={(_, i) => setProjets((l) => l.filter((__, j) => j !== i))}
+            />
           </Step>
         )}
 
