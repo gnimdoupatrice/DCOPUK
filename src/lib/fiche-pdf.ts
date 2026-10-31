@@ -70,7 +70,7 @@ export async function telechargerFichePdf(c: Convention, points: PointFocal[], p
           formatMontant(budgetEnFcfa(p)),
         ])
       : [["Aucun projet", "", "", ""]],
-    foot: projets.length ? [["Total", "", "", formatMontant(total)]] : undefined,
+    ...(projets.length ? { foot: [["Total", "", "", formatMontant(total)]] } : {}),
   });
 
   doc.setFontSize(8);
