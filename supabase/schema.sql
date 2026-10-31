@@ -96,3 +96,51 @@ alter table public.conventions add column if not exists seuil_alerte_jours integ
 alter table public.conventions add column if not exists date_alerte date;
 alter table public.conventions alter column preavis_mois drop not null;
 alter table public.conventions alter column reconduction set default 'Non reconductible';
+
+-- ============================================================
+-- Mise à jour : e-mails d'alerte, points focaux, projets (idempotent)
+-- ============================================================
+alter table public.conventions add column if not exists emails_alerte text[] not null default '{}';
+
+create table if not exists public.convention_points_focaux (
+  id uuid primary key default gen_random_uuid(),
+  convention_id uuid not null references public.conventions(id) on delete cascade,
+  institution_type text not null check (institution_type in ('universite','partenaire')),
+  nom text not null,
+  prenom text not null,
+  fonction text,
+  email text,
+  telephone text,
+  recoit_alertes boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_points_focaux_convention on public.convention_points_focaux(convention_id);
+grant select, insert, update, delete on public.convention_points_focaux to authenticated;
+grant all on public.convention_points_focaux to service_role;
+alter table public.convention_points_focaux enable row level security;
+drop policy if exists "Personnel DCOP - points focaux" on public.convention_points_focaux;
+create policy "Personnel DCOP - points focaux" on public.convention_points_focaux
+  for all to authenticated using (true) with check (true);
+
+create table if not exists public.convention_projets (
+  id uuid primary key default gen_random_uuid(),
+  convention_id uuid not null references public.conventions(id) on delete cascade,
+  titre text not null,
+  date_debut date,
+  date_fin date,
+  description text,
+  activites text,
+  budget_montant numeric check (budget_montant is null or budget_montant >= 0),
+  budget_devise text default 'FCFA',
+  apport_kara text,
+  apport_partenaire text,
+  lecons_apprises text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_projets_convention on public.convention_projets(convention_id);
+grant select, insert, update, delete on public.convention_projets to authenticated;
+grant all on public.convention_projets to service_role;
+alter table public.convention_projets enable row level security;
+drop policy if exists "Personnel DCOP - projets" on public.convention_projets;
+create policy "Personnel DCOP - projets" on public.convention_projets
+  for all to authenticated using (true) with check (true);
