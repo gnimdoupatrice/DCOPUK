@@ -92,11 +92,6 @@ export function ConventionDrawer({
     if (err) return err;
     const { error } = await supabase.from("convention_points_focaux").insert({ ...p, convention_id: c.id });
     if (error) return error.message;
-    if (p.recoit_alertes && p.email) {
-      const em = p.email.trim().toLowerCase();
-      const liste = c.emails_alerte ?? [];
-      if (!liste.includes(em)) await supabase.from("conventions").update({ emails_alerte: [...liste, em] }).eq("id", c.id);
-    }
     await logHistorique(c.id, "Point focal ajouté", `${p.nom} ${p.prenom}`);
     await loadSuivi();
     await loadHistorique();

@@ -1231,10 +1231,6 @@ function ConventionForm({
                       const err = validerPointFocal(pf);
                       if (err) return err;
                       setPointsFocaux((l) => [...l, pf]);
-                      if (pf.recoit_alertes && pf.email) {
-                        const em = pf.email.trim().toLowerCase();
-                        setEmailsAlerte((l) => (l.includes(em) ? l : [...l, em]));
-                      }
                       return null;
                     }}
                     onRemove={(_, i) => setPointsFocaux((l) => l.filter((__, j) => j !== i))}
