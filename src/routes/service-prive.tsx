@@ -47,7 +47,7 @@ import {
   type Rebours,
 } from "@/lib/projets";
 import {
-  CADRES_PAR_POLE,
+  cadresParPole,
   DEFAULT_POLES,
   etatAlerte,
   SOUS_MENTION_ALERTE,
