@@ -11,6 +11,8 @@ La Direction est traitée en premier. Chaque destinataire reçoit un message dis
 
 Les marqueurs historiques sont conservés uniquement pour éviter de réenvoyer à la Direction une ancienne alerte. Les partenaires et les points focaux manquants peuvent encore recevoir cette alerte tant que la convention est active.
 
+Les points focaux assignés sont lus directement au moment de l’envoi, sans copie automatique dans les adresses partenaires. Les adresses déjà copiées par une ancienne version restent dans la liste partenaire : les retirer de cette liste si elles ne doivent plus recevoir d’alertes. Une adresse explicitement inscrite comme partenaire reste destinataire même si son point focal est supprimé.
+
 Les clés d’idempotence Resend protègent les tentatives concurrentes pendant sa fenêtre de 24 heures. Si Resend accepte un message mais que l’écriture du reçu échoue plus de 24 heures, un doublon reste possible : surveiller les erreurs et rétablir rapidement l’accès à la base.
 
 L’agent n’a pas accès à la base externe ni à la configuration d’envoi. L’application réelle du script, la planification et la livraison restent à confirmer après configuration.

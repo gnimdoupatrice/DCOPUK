@@ -22,3 +22,4 @@
 - PWA : manifeste statique `public/manifest.webmanifest`, SW généré par vite-plugin-pwa (outDir `dist/client`) et enregistré uniquement via `src/lib/pwa.ts` (bloqué en aperçu/dev) — ne jamais écrire de sw.js à la main.
 - Email alert eligibility and recipient isolation live in `src/lib/alertes-email.ts`; the protected cron route sends individually and persists per-event/per-recipient receipts so partial failures do not resend successful deliveries.
 - Keep the external email provider configuration server-only; require a verified sender domain before sending partner alerts because the provider test sender cannot deliver to partners.
+- Keep focal-point email assignments separate from explicit partner email lists; resolve assigned focal points at send time so removing a focal point removes its implicit subscription.
