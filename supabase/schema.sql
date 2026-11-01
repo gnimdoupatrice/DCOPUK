@@ -144,3 +144,26 @@ alter table public.convention_projets enable row level security;
 drop policy if exists "Personnel DCOP - projets" on public.convention_projets;
 create policy "Personnel DCOP - projets" on public.convention_projets
   for all to authenticated using (true) with check (true);
+
+-- ============================================================
+-- Alertes e-mail : reprise par destinataire (idempotent)
+-- Exécuter ce bloc sur la base externe avant d'activer l'envoi.
+-- ============================================================
+alter table public.conventions add column if not exists heure_alerte time;
+alter table public.conventions add column if not exists alarme_arretee_le timestamptz;
+alter table public.conventions add column if not exists alarme_reportee_jusqu_a timestamptz;
+alter table public.conventions add column if not exists email_alerte_envoye_pour timestamptz;
+alter table public.conventions add column if not exists email_report_envoye_pour timestamptz;
+
+create table if not exists public.convention_email_envois (
+  convention_id uuid not null references public.conventions(id) on delete cascade,
+  type_evenement text not null check (type_evenement in ('alerte', 'report')),
+  moment_evenement timestamptz not null,
+  destinataire text not null,
+  envoye_le timestamptz not null default now(),
+  primary key (convention_id, type_evenement, moment_evenement, destinataire)
+);
+grant all on public.convention_email_envois to service_role;
+revoke all on public.convention_email_envois from anon, authenticated;
+alter table public.convention_email_envois enable row level security;
+-- Aucun accès navigateur : seul le traitement serveur authentifié par secret l'utilise.

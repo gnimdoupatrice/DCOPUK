@@ -20,3 +20,5 @@
 - La fiche détaillée, les actions du Directeur (avenant, archivage, modification, suppression) et la gestion des PDF vivent dans `src/components/dcop/ConventionDrawer.tsx` ; chaque action est tracée dans la table `convention_historique` pour garder un historique.
 - L'alarme critique (boucle sonore, bannière, résumé « J'ai pris acte ») vit dans `src/components/dcop/CriticalAlarm.tsx` : déclenchée à la date+heure d'alerte de chaque convention, jamais pour les expirées ; fichier perso optionnel `public/alarme.mp3`.
 - PWA : manifeste statique `public/manifest.webmanifest`, SW généré par vite-plugin-pwa (outDir `dist/client`) et enregistré uniquement via `src/lib/pwa.ts` (bloqué en aperçu/dev) — ne jamais écrire de sw.js à la main.
+- Email alert eligibility and recipient isolation live in `src/lib/alertes-email.ts`; the protected cron route sends individually and persists per-event/per-recipient receipts so partial failures do not resend successful deliveries.
+- Keep the external email provider configuration server-only; require a verified sender domain before sending partner alerts because the provider test sender cannot deliver to partners.

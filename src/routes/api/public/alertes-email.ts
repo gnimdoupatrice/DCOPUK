@@ -1,17 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
-import { timingSafeEqual } from "crypto";
-import { type Convention, joursRestants, momentAlerteConvention } from "@/lib/conventions";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { destinatairesConvention, envoyerDestinataires, evenementEmailDu, type ConventionEmail, type TypeEmailAlerte } from "@/lib/alertes-email";
+import { type PointFocal } from "@/lib/projets";
 
 const SUPABASE_URL = "https://yebrrcwlewbktsvggfrx.supabase.co";
 const RESEND_URL = "https://api.resend.com/emails";
 const DESTINATAIRE = "beyeliakougnimdoupatrice13@gmail.com";
-const EXPEDITEUR = "DCOP Université de Kara <onboarding@resend.dev>";
-
-type Row = Convention & {
-  email_alerte_envoye_pour?: string | null;
-  email_report_envoye_pour?: string | null;
-};
 
 function jetonValide(request: Request, secret: string): boolean {
   const recu = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -23,9 +18,9 @@ function jetonValide(request: Request, secret: string): boolean {
 const fmt = (d: Date) =>
   d.toLocaleString("fr-FR", { timeZone: "Africa/Lome", dateStyle: "long", timeStyle: "short" });
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] ?? ch);
 
-async function envoyer(c: Row, type: "alerte" | "report", moment: Date) {
+async function envoyer(c: ConventionEmail, type: TypeEmailAlerte, moment: Date, email: string, apiKey: string, from: string, now: Date) {
   const titre = type === "alerte" ? "Alerte convention — heure programmée" : "Rappel — fin du report d'alerte";
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px">
@@ -33,7 +28,7 @@ async function envoyer(c: Row, type: "alerte" | "report", moment: Date) {
       <p><strong>${esc(c.partenaire_nom)}</strong> (${esc(c.partenaire_pays)})</p>
       <p>${esc(c.pole)} — ${esc(c.cadre_juridique)}</p>
       <p>Échéance : <strong>${new Date(c.date_echeance + "T00:00:00").toLocaleDateString("fr-FR")}</strong>
-         (J-${joursRestants(c.date_echeance)})</p>
+         (J-${Math.ceil((Date.parse(c.date_echeance + "T00:00:00Z") - now.getTime()) / 86400000)})</p>
       <p>Heure de l'alerte : ${fmt(moment)}</p>
       <p>Connectez-vous à l'Espace Privé DCOP pour reporter ou arrêter définitivement cette alerte.</p>
     </div>`;
@@ -41,61 +36,84 @@ async function envoyer(c: Row, type: "alerte" | "report", moment: Date) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env["RESEND_API_KEY"]}`,
+      Authorization: `Bearer ${apiKey}`,
+      "Idempotency-Key": createHash("sha256").update(`${c.id}:${type}:${moment.toISOString()}:${email}`).digest("hex"),
     },
-    body: JSON.stringify({ from: EXPEDITEUR, to: [DESTINATAIRE], subject: `${titre} : ${c.partenaire_nom}`, html }),
+    body: JSON.stringify({ from, to: [email], subject: `${titre} : ${c.partenaire_nom}`, html }),
+    signal: AbortSignal.timeout(15000),
   });
-  if (!res.ok) throw new Error(`Resend [${res.status}] ${await res.text()}`);
+  if (!res.ok) throw new Error(`Resend [${res.status}]`);
 }
 
 async function traiter(request: Request) {
   const secret = process.env["ALERTES_CRON_SECRET"];
-  const serviceKey = process.env["DCOP_SUPABASE_SERVICE_ROLE_KEY"];
-  if (!secret || !serviceKey || !process.env["RESEND_API_KEY"]) {
-    return Response.json({ error: "Configuration incomplète" }, { status: 500 });
-  }
+  if (!secret) return Response.json({ error: "Configuration incomplète" }, { status: 503 });
   if (!jetonValide(request, secret)) return new Response("Unauthorized", { status: 401 });
+  if (new URL(request.url).search) return Response.json({ error: "Paramètres non autorisés" }, { status: 400 });
+  const serviceKey = process.env["DCOP_SUPABASE_SERVICE_ROLE_KEY"];
+  const apiKey = process.env["RESEND_API_KEY"];
+  const from = process.env["RESEND_FROM_EMAIL"];
+  if (!serviceKey || !apiKey || !from || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from) || from.toLowerCase().endsWith("@resend.dev")) {
+    return Response.json({ error: "Configuration d’envoi incomplète : adresse d’expédition sur un domaine vérifié requise" }, { status: 503 });
+  }
 
   const db = createClient(SUPABASE_URL, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers);
+        if (serviceKey.startsWith("sb_")) headers.delete("authorization");
+        headers.set("apikey", serviceKey);
+        return fetch(input, { ...init, headers });
+      },
+    },
   });
   const { data, error } = await db
     .from("conventions")
     .select("*")
     .eq("archived", false)
     .is("alarme_arretee_le", null);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: "Lecture des conventions impossible" }, { status: 500 });
 
-  const now = Date.now();
-  const envoyes: string[] = [];
-  const erreurs: string[] = [];
-  for (const c of (data ?? []) as Row[]) {
-    if (joursRestants(c.date_echeance) < 0) continue;
+  const now = new Date();
+  const dues = ((data ?? []) as ConventionEmail[]).flatMap((c) => {
+    const evenement = evenementEmailDu(c, now);
+    return evenement ? [{ c, evenement }] : [];
+  });
+  if (!dues.length) return Response.json({ envoyes: 0, erreurs: 0 });
+  const ids = dues.map(({ c }) => c.id);
+  const [focaux, receipts] = await Promise.all([
+    db.from("convention_points_focaux").select("convention_id,email,recoit_alertes").in("convention_id", ids).eq("recoit_alertes", true),
+    db.from("convention_email_envois").select("convention_id,type_evenement,moment_evenement,destinataire").in("convention_id", ids),
+  ]);
+  if (focaux.error || receipts.error) return Response.json({ error: "Lecture des destinataires impossible : vérifier le script de mise à jour" }, { status: 500 });
+  let envoyes = 0;
+  let erreurs = 0;
+  for (const { c, evenement } of dues) {
     try {
-      if (c.alarme_reportee_jusqu_a) {
-        const r = new Date(c.alarme_reportee_jusqu_a);
-        const cle = r.toISOString();
-        if (r.getTime() <= now && c.email_report_envoye_pour !== cle) {
-          await envoyer(c, "report", r);
-          await db.from("conventions").update({ email_report_envoye_pour: cle }).eq("id", c.id);
-          envoyes.push(c.id);
-        }
-      } else {
-        const m = momentAlerteConvention(c);
-        if (!m) continue;
-        const cle = m.toISOString();
-        if (m.getTime() <= now && c.email_alerte_envoye_pour !== cle) {
-          await envoyer(c, "alerte", m);
-          await db.from("conventions").update({ email_alerte_envoye_pour: cle }).eq("id", c.id);
-          envoyes.push(c.id);
-        }
+      const destinataires = destinatairesConvention(DESTINATAIRE, c, (focaux.data ?? []) as Pick<PointFocal, "convention_id" | "email" | "recoit_alertes">[]);
+      const dejaEnvoyes = new Set<string>((receipts.data ?? []).filter((r) => r.convention_id === c.id && r.type_evenement === evenement.type && new Date(r.moment_evenement).toISOString() === evenement.cle).map((r) => r.destinataire));
+      // Les anciens marqueurs ne concernaient que la Direction, jamais les partenaires.
+      const ancien = evenement.type === "alerte" ? c.email_alerte_envoye_pour : c.email_report_envoye_pour;
+      if (ancien && new Date(ancien).toISOString() === evenement.cle) dejaEnvoyes.add(DESTINATAIRE);
+      const result = await envoyerDestinataires(destinataires, dejaEnvoyes,
+        (email) => envoyer(c, evenement.type, evenement.moment, email, apiKey, `DCOP Université de Kara <${from}>`, now),
+        async (email) => {
+          const { error: receiptError } = await db.from("convention_email_envois").upsert({ convention_id: c.id, type_evenement: evenement.type, moment_evenement: evenement.cle, destinataire: email }, { onConflict: "convention_id,type_evenement,moment_evenement,destinataire" });
+          if (receiptError) throw new Error("Mémorisation impossible");
+        });
+      envoyes += result.envoyes;
+      erreurs += result.erreurs;
+      if (destinataires.every((email) => dejaEnvoyes.has(email))) {
+        const field = evenement.type === "alerte" ? "email_alerte_envoye_pour" : "email_report_envoye_pour";
+        const { error: updateError } = await db.from("conventions").update({ [field]: evenement.cle }).eq("id", c.id);
+        if (updateError) erreurs += 1;
       }
-    } catch (e) {
-      console.error("Envoi e-mail échoué", c.id, e);
-      erreurs.push(c.id);
+    } catch {
+      erreurs += 1;
     }
   }
-  return Response.json({ envoyes: envoyes.length, erreurs: erreurs.length });
+  return Response.json({ envoyes, erreurs }, { status: erreurs ? 503 : 200 });
 }
 
 export const Route = createFileRoute("/api/public/alertes-email")({
