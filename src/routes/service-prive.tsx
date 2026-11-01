@@ -793,6 +793,7 @@ function Espace({ email }: { email: string }) {
       {showForm && (
         <ConventionForm
           poles={poles}
+          cadresParPole={cadresParPole(conventions)}
           initial={editing}
           onClose={() => setShowForm(false)}
           onSaved={(info) => {
@@ -947,7 +948,7 @@ function ConventionForm({
   const [error, setError] = useState<string | null>(null);
 
   const poleFinal = pole === "__new" ? nouveauPole.trim() : pole;
-  const cadres = CADRES_PAR_POLE[poleFinal] ?? [];
+  const cadres = modelesCadres[poleFinal] ?? [];
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
   // Sas de modification
