@@ -906,16 +906,18 @@ const cad = (l: boolean) => (l ? " 🔒" : "");
 
 function ConventionForm({
   poles,
+  cadresParPole: modelesCadres,
   initial,
   onClose,
   onSaved,
 }: {
   poles: string[];
+  cadresParPole: Record<string, string[]>;
   initial?: Convention | null;
   onClose: () => void;
   onSaved: (info: InfoCreation | null) => void;
 }) {
-  const initCadres = initial ? (CADRES_PAR_POLE[initial.pole] ?? []) : [];
+  const initCadres = initial ? (modelesCadres[initial.pole] ?? []) : [];
   const initCadreConnu = !!initial && initCadres.includes(initial.cadre_juridique);
   const [pole, setPole] = useState(initial?.pole ?? "");
   const [nouveauPole, setNouveauPole] = useState("");

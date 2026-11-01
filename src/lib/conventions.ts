@@ -32,6 +32,28 @@ export const CADRES_PAR_POLE: Record<string, string[]> = {
   ],
 };
 
+/**
+ * Modèles de cadres par pôle : modèles par défaut + tout cadre déjà saisi dans le registre
+ * (une saisie libre devient ainsi un modèle réutilisable). Dédoublonnage insensible à la casse/espaces.
+ */
+export function cadresParPole(conventions: { pole: string; cadre_juridique: string }[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const vus: Record<string, Set<string>> = {};
+  const ajouter = (pole: string, cadre: string) => {
+    const p = pole?.trim();
+    const c = cadre?.trim().replace(/\s+/g, " ");
+    if (!p || !c) return;
+    const cle = c.toLocaleLowerCase("fr");
+    (vus[p] ??= new Set());
+    if (vus[p].has(cle)) return;
+    vus[p].add(cle);
+    (out[p] ??= []).push(c);
+  };
+  for (const [p, liste] of Object.entries(CADRES_PAR_POLE)) liste.forEach((c) => ajouter(p, c));
+  for (const cv of conventions) ajouter(cv.pole, cv.cadre_juridique);
+  return out;
+}
+
 export interface Convention {
   id: string;
   pole: string;
