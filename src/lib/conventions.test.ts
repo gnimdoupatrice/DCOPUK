@@ -13,6 +13,6 @@ describe("cadresParPole", () => {
   });
   it("pas de doublon malgré la casse ou les espaces", () => {
     const m = cadresParPole([{ pole: "Partenariat National", cadre_juridique: "  convention   SPÉCIFIQUE " }]);
-    expect(m["Partenariat National"].filter((c) => c.toLowerCase() === "convention spécifique")).toHaveLength(1);
+    expect((m["Partenariat National"] ?? []).filter((c) => c.toLowerCase() === "convention spécifique")).toHaveLength(1);
   });
 });
