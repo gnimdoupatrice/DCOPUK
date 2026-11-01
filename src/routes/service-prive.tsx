@@ -47,7 +47,7 @@ import {
   type Rebours,
 } from "@/lib/projets";
 import {
-  CADRES_PAR_POLE,
+  cadresParPole,
   DEFAULT_POLES,
   etatAlerte,
   SOUS_MENTION_ALERTE,
@@ -793,6 +793,7 @@ function Espace({ email }: { email: string }) {
       {showForm && (
         <ConventionForm
           poles={poles}
+          cadresParPole={cadresParPole(conventions)}
           initial={editing}
           onClose={() => setShowForm(false)}
           onSaved={(info) => {
@@ -906,16 +907,18 @@ const cad = (l: boolean) => (l ? " 🔒" : "");
 
 function ConventionForm({
   poles,
+  cadresParPole: modelesCadres,
   initial,
   onClose,
   onSaved,
 }: {
   poles: string[];
+  cadresParPole: Record<string, string[]>;
   initial?: Convention | null;
   onClose: () => void;
   onSaved: (info: InfoCreation | null) => void;
 }) {
-  const initCadres = initial ? (CADRES_PAR_POLE[initial.pole] ?? []) : [];
+  const initCadres = initial ? (modelesCadres[initial.pole] ?? []) : [];
   const initCadreConnu = !!initial && initCadres.includes(initial.cadre_juridique);
   const [pole, setPole] = useState(initial?.pole ?? "");
   const [nouveauPole, setNouveauPole] = useState("");
@@ -945,7 +948,7 @@ function ConventionForm({
   const [error, setError] = useState<string | null>(null);
 
   const poleFinal = pole === "__new" ? nouveauPole.trim() : pole;
-  const cadres = CADRES_PAR_POLE[poleFinal] ?? [];
+  const cadres = modelesCadres[poleFinal] ?? [];
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
   // Sas de modification
