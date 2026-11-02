@@ -148,7 +148,7 @@ export function jouerSignalAlerte(niveau: "alerte" | "urgence" = "alerte") {
 export type Statut = "actif" | "expire";
 
 /** État de l'alerte d'une convention en vigueur. */
-export type EtatAlerte = "aucune" | "programmee" | "sonnerie" | "reportee" | "arretee" | "depassee";
+export type EtatAlerte = "aucune" | "programmee" | "sonnerie" | "reportee" | "arretee";
 
 
 export function calculerEcheance(dateSignature: string, dureeMois: number): string {
@@ -210,7 +210,7 @@ export const SOUS_MENTION_ALERTE: Partial<Record<EtatAlerte, { label: string; cl
   sonnerie: { label: "Alerte en attente d'action", cls: "text-destructive" },
 };
 
-export type FiltreCockpit = "" | "actives" | "depassee" | "reportee" | "arretee" | "expire";
+export type FiltreCockpit = "" | "actives" | "reportee" | "arretee" | "expire";
 
 export function correspondCockpit(c: Convention, filtre: FiltreCockpit): boolean {
   if (!filtre) return true;
@@ -313,10 +313,6 @@ export function momentAlerteConvention(c: Convention): Date | null {
   return isNaN(result.getTime()) ? null : result;
 }
 
-export function momentRappel8h(momentInitial: Date): Date {
-  return new Date(momentInitial.getTime() + 8 * 60 * 60 * 1000);
-}
-
 /* ---------- Modification : trois sas ---------- */
 
 export const FENETRE_CORRECTION_MS = 48 * 60 * 60 * 1000;
@@ -404,15 +400,13 @@ export function libelleAlarme(c: Convention): string {
   const m = momentReferenceAlerte(c);
   switch (etat) {
     case "arretee":
-      return `Arrêtée définitivement le ${fmtDH(new Date(c.alarme_arretee_le!))}`;
+      return c.alarme_arretee_le ? `Arrêtée définitivement le ${fmtDH(new Date(c.alarme_arretee_le))}` : "Aucune alerte programmée";
     case "reportee":
-      return `Reportée au ${fmtDH(m!)}`;
+      return m ? `Reportée au ${fmtDH(m)}` : "Aucune alerte programmée";
     case "programmee":
-      return `Programmée le ${fmtDH(m!)}`;
+      return m ? `Programmée le ${fmtDH(m)}` : "Aucune alerte programmée";
     case "sonnerie":
-      return `En cours de sonnerie (H : ${fmtDH(m!)})`;
-    case "depassee":
-      return `Passée sans action — H : ${fmtDH(m!)} · rappel H+8 : ${fmtDH(momentRappel8h(m!))}`;
+      return m ? `En cours de sonnerie (H : ${fmtDH(m)})` : "Aucune alerte programmée";
     default:
       return "Aucune alerte programmée";
   }

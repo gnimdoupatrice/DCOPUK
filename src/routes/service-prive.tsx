@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CriticalAlarm } from "@/components/dcop/CriticalAlarm";
-import { RegulariserAlerte } from "@/components/dcop/RegulariserAlerte";
 import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -220,12 +219,10 @@ function Espace({ email }: { email: string }) {
 
   const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
   const [resumeConnexion, setResumeConnexion] = useState(false);
-  const [regulariserId, setRegulariserId] = useState<string | null>(null);
   const resumeStats = useMemo(() => {
     const actives = conventions.filter((c) => !c.archived);
     return {
       enVigueur: actives.filter((c) => correspondCockpit(c, "actives")).length,
-      depassee: actives.filter((c) => correspondCockpit(c, "depassee")).length,
       reportee: actives.filter((c) => correspondCockpit(c, "reportee")).length,
       arretee: actives.filter((c) => correspondCockpit(c, "arretee")).length,
       expire: actives.filter((c) => correspondCockpit(c, "expire")).length,
@@ -387,7 +384,6 @@ function Espace({ email }: { email: string }) {
     return {
       total: actives.length,
       enCours: n("actives"),
-      depassee: n("depassee"),
       reportee: n("reportee"),
       arretee: n("arretee"),
       expire: n("expire"),
@@ -578,7 +574,7 @@ function Espace({ email }: { email: string }) {
               <span>
                 Filtre du cockpit :{" "}
                 <strong>
-                  {{ actives: "En vigueur", depassee: "En vigueur", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
+                  {{ actives: "En vigueur", reportee: "Alertes reportées", arretee: "Alertes arrêtées définitivement", expire: "Expirées" }[fCockpit]}
                 </strong>
               </span>
               <button onClick={() => setFCockpit("")} className="ml-auto rounded-md bg-uk-blue px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110">
@@ -782,7 +778,6 @@ function Espace({ email }: { email: string }) {
           convention={selected}
           onClose={() => setSelectedId(null)}
           onChanged={load}
-          onRegulariser={() => setRegulariserId(selected.id)}
           onEdit={() => {
             setEditing(selected);
             setShowForm(true);
@@ -806,13 +801,6 @@ function Espace({ email }: { email: string }) {
       )}
 
       <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />
-      {regulariserId && conventions.find((c) => c.id === regulariserId) && (
-        <RegulariserAlerte
-          convention={conventions.find((c) => c.id === regulariserId)!}
-          onClose={() => setRegulariserId(null)}
-          onDone={load}
-        />
-      )}
       {resumeConnexion && !alarmeActiveId && !actives.some((c) => etatAlerte(c) === "sonnerie") && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setResumeConnexion(false)}>
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
