@@ -397,7 +397,7 @@ export function ConventionDrawer({
                       type="date"
                       required
                       min={new Date().toISOString().slice(0, 10)}
-                      max={nouvelleEcheance ? ajouterMois(nouvelleEcheance, 0, -1) : undefined}
+                      max={nouvelleEcheance ? decalerDate(nouvelleEcheance, 0, -1) : undefined}
                       value={avDateAlerte}
                       onChange={(e) => setAvDateAlerte(e.target.value)}
                       className={inputCls}
