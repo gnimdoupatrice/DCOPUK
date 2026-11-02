@@ -47,6 +47,7 @@ import {
 } from "@/lib/projets";
 import {
   cadresParPole,
+  cadresPourPole,
   DEFAULT_POLES,
   etatAlerte,
   SOUS_MENTION_ALERTE,
@@ -936,7 +937,7 @@ function ConventionForm({
   const [error, setError] = useState<string | null>(null);
 
   const poleFinal = pole === "__new" ? nouveauPole.trim() : pole;
-  const cadres = modelesCadres[poleFinal] ?? [];
+  const cadres = cadresPourPole(modelesCadres, poleFinal);
   const cadreFinal = cadre === "__libre" || cadres.length === 0 ? cadreLibre.trim() : cadre;
 
   // Sas de modification

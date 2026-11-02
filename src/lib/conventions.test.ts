@@ -48,3 +48,14 @@ describe("dates de fin de mois", () => {
   it("31 janvier + 1 mois = 28 février", () => expect(_ce("2025-01-31", 1)).toBe("2025-02-28"));
   it("préavis 1 mois avant 31 mars = 28 février", () => expect(_dlp("2025-03-31", 1)).toBe("2025-02-28"));
 });
+
+import { cadresPourPole, CADRES_UNIVERSELS } from "./conventions";
+describe("cadres pour un nouveau pôle", () => {
+  it("un pôle inconnu reçoit la liste universelle", () => expect(cadresPourPole({}, "Pôle Nouveau")).toEqual(CADRES_UNIVERSELS));
+  it("aucun pôle = aucune liste", () => expect(cadresPourPole({}, "  ")).toEqual([]));
+  it("cadres propres conservés sans doublon", () => {
+    const l = cadresPourPole({ X: ["Protocole local", "convention spécifique"] }, "X");
+    expect(l[0]).toBe("Protocole local");
+    expect(l.filter((c) => c.toLowerCase() === "convention spécifique")).toHaveLength(1);
+  });
+});

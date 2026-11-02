@@ -32,6 +32,25 @@ export const CADRES_PAR_POLE: Record<string, string[]> = {
   ],
 };
 
+/** Instruments juridiques transversaux, proposés pour tout pôle (y compris un pôle nouvellement créé). */
+export const CADRES_UNIVERSELS = [
+  "Convention-cadre de partenariat",
+  "Convention spécifique",
+  "Protocole d'accord",
+  "Accord-cadre de coopération",
+  "Mémorandum d'entente (MoU)",
+];
+
+/** Liste des cadres pour un pôle donné, jamais vide dès qu'un pôle est renseigné. */
+export function cadresPourPole(modeles: Record<string, string[]>, pole: string): string[] {
+  const p = pole?.trim();
+  if (!p) return [];
+  const liste = [...(modeles[p] ?? [])];
+  const vus = new Set(liste.map((c) => c.toLocaleLowerCase("fr")));
+  for (const c of CADRES_UNIVERSELS) if (!vus.has(c.toLocaleLowerCase("fr"))) liste.push(c);
+  return liste;
+}
+
 /**
  * Modèles de cadres par pôle : modèles par défaut + tout cadre déjà saisi dans le registre
  * (une saisie libre devient ainsi un modèle réutilisable). Dédoublonnage insensible à la casse/espaces.
