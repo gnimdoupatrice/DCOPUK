@@ -1062,7 +1062,12 @@ function ConventionForm({
     setBusy(true);
     setError(null);
     if (pole === "__new") {
-      await supabase.from("poles").insert({ nom: poleFinal });
+      const { error: ep } = await supabase.from("poles").insert({ nom: poleFinal });
+      if (ep && ep.code !== "23505") {
+        setBusy(false);
+        setError("Création du pôle impossible : " + ep.message);
+        return;
+      }
     }
 
     const alerteChangee = !!initial && (initial.date_alerte !== dateAlerte || initial.heure_alerte !== heureAlerte);
@@ -1106,6 +1111,15 @@ function ConventionForm({
     if (!initial && projets.length) {
       const { error: e2 } = await supabase.from("convention_projets").insert(projets.map((pr) => ({ ...pr, convention_id: id })));
       if (e2) avertissements.push("projets : " + e2.message);
+    }
+    if (!initial && avertissements.length) {
+      // Annulation complète : on ne laisse pas une convention à moitié enregistrée
+      await supabase.from("convention_points_focaux").delete().eq("convention_id", id);
+      await supabase.from("convention_projets").delete().eq("convention_id", id);
+      await supabase.from("conventions").delete().eq("id", id);
+      setBusy(false);
+      setError("Enregistrement annulé, rien n'a été conservé (" + avertissements.join(" ; ") + "). Corrigez puis réessayez.");
+      return;
     }
     if (avertissements.length) {
       alert("Convention enregistrée, mais certains éléments n'ont pas pu être ajoutés (" + avertissements.join(" ; ") + "). Vous pourrez les ajouter depuis la fiche.");

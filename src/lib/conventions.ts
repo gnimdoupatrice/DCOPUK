@@ -153,16 +153,12 @@ export type EtatAlerte = "aucune" | "programmee" | "sonnerie" | "reportee" | "ar
 
 export function calculerEcheance(dateSignature: string, dureeMois: number): string {
   if (!dateSignature || !dureeMois) return "";
-  const d = new Date(dateSignature + "T00:00:00");
-  d.setMonth(d.getMonth() + dureeMois);
-  return d.toISOString().slice(0, 10);
+  return decalerDate(dateSignature, dureeMois);
 }
 
 export function dateLimitePreavis(dateEcheance: string, preavisMois: number | null | undefined): string {
   if (!dateEcheance || preavisMois == null) return "";
-  const d = new Date(dateEcheance + "T00:00:00");
-  d.setMonth(d.getMonth() - (preavisMois || 0));
-  return d.toISOString().slice(0, 10);
+  return decalerDate(dateEcheance, -(preavisMois || 0));
 }
 
 export function joursRestants(dateEcheance: string): number {
@@ -343,6 +339,7 @@ export function champsOptionnelsVides(c: Convention): string[] {
   if (!c.thematique) vides.push("thematique");
   if (c.preavis_mois == null) vides.push("preavis");
   if (!c.pdf_path) vides.push("pdf");
+  if (!c.emails_alerte || c.emails_alerte.length === 0) vides.push("emails");
   return vides;
 }
 

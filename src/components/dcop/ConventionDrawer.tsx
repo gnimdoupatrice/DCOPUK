@@ -10,6 +10,7 @@ import {
   PDF_MAX_OCTETS,
   STATUT_INFO,
   ajouterMois,
+  decalerDate,
   statutConvention,
   etatAlerte,
   libelleAlarme,
@@ -162,7 +163,7 @@ export function ConventionDrawer({
       if (!avDateAlerte || !avHeureAlerte) return "Programmez la nouvelle alerte (date et heure) pour la nouvelle échéance.";
       const m = new Date(`${avDateAlerte}T${avHeureAlerte}`);
       if (m.getTime() <= Date.now()) return "La nouvelle alerte doit être dans le futur.";
-      if (avDateAlerte > nouvelleEcheance) return "La nouvelle alerte doit précéder la nouvelle échéance.";
+      if (avDateAlerte >= nouvelleEcheance) return "La nouvelle alerte doit précéder la nouvelle échéance.";
       const { error } = await supabase
         .from("conventions")
         .update({
@@ -390,6 +391,24 @@ export function ConventionDrawer({
                 <p className="text-sm">
                   Nouvelle échéance : <strong>{nouvelleEcheance ? formatDate(nouvelleEcheance) : "—"}</strong>
                 </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Nouvelle date d'alerte
+                    <input
+                      type="date"
+                      required
+                      min={new Date().toISOString().slice(0, 10)}
+                      max={nouvelleEcheance ? decalerDate(nouvelleEcheance, 0, -1) : undefined}
+                      value={avDateAlerte}
+                      onChange={(e) => setAvDateAlerte(e.target.value)}
+                      className={inputCls}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Heure
+                    <input type="time" required value={avHeureAlerte} onChange={(e) => setAvHeureAlerte(e.target.value)} className={inputCls} />
+                  </label>
+                </div>
                 <label className="block text-xs font-medium text-muted-foreground">
                   Note sur l'avenant
                   <textarea maxLength={1000} rows={3} value={noteAvenant} onChange={(e) => setNoteAvenant(e.target.value)} className={inputCls} />
