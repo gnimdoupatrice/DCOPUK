@@ -47,13 +47,11 @@ export function ConventionDrawer({
   onClose,
   onChanged,
   onEdit,
-  onRegulariser,
 }: {
   convention: Convention;
   onClose: () => void;
   onChanged: () => void;
   onEdit: () => void;
-  onRegulariser?: () => void;
 }) {
   const [panel, setPanel] = useState<Panel>(null);
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
@@ -300,15 +298,6 @@ export function ConventionDrawer({
                 <span className={`text-xs font-semibold ${SOUS_MENTION_ALERTE[etat]!.cls}`}>{SOUS_MENTION_ALERTE[etat]!.label}</span>
               )}
               <span className="text-right text-[11px] text-muted-foreground">{libelleAlarme(c)}</span>
-              {statut === "actif" && etat === "depassee" && onRegulariser && (
-                <button
-                  type="button"
-                  onClick={onRegulariser}
-                  className="mt-1 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:brightness-110"
-                >
-                  Régulariser (reporter ou arrêter)
-                </button>
-              )}
               {c.archived && (
                 <span className="rounded-full bg-foreground px-3 py-1 text-xs font-semibold text-background">Clôturée / archivée</span>
               )}
