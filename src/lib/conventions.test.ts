@@ -42,3 +42,9 @@ describe("arbitrage de l'alarme", () => {
     expect(etatAlerte(reportee, cible.getTime())).toBe("sonnerie");
   });
 });
+
+import { calculerEcheance as _ce, dateLimitePreavis as _dlp } from "./conventions";
+describe("dates de fin de mois", () => {
+  it("31 janvier + 1 mois = 28 février", () => expect(_ce("2025-01-31", 1)).toBe("2025-02-28"));
+  it("préavis 1 mois avant 31 mars = 28 février", () => expect(_dlp("2025-03-31", 1)).toBe("2025-02-28"));
+});
