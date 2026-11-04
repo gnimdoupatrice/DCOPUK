@@ -313,7 +313,6 @@ function Espace({ email }: { email: string }) {
       return;
     }
     try {
-      await supabase.from("convention_historique").delete().eq("convention_id", id);
       await supabase.from("convention_points_focaux").delete().eq("convention_id", id);
       await supabase.from("convention_projets").delete().eq("convention_id", id);
       if (pdfPath) {

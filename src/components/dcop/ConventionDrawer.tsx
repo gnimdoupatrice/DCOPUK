@@ -222,7 +222,6 @@ export function ConventionDrawer({
       return;
     }
     setBusy(true);
-    await supabase.from("convention_historique").delete().eq("convention_id", c.id);
     await supabase.from("convention_points_focaux").delete().eq("convention_id", c.id);
     await supabase.from("convention_projets").delete().eq("convention_id", c.id);
     if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
