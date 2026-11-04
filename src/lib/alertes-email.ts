@@ -39,12 +39,17 @@ export async function envoyerDestinataires(
     if (envoyes + erreurs >= plafond) break;
     try {
       await envoyer(email);
-      await memoriser(email);
-      dejaEnvoyes.add(email);
-      envoyes += 1;
     } catch (err) {
       erreurs += 1;
       if (noterEchec) await noterEchec(email, err).catch(() => {});
+      continue;
+    }
+    try {
+      await memoriser(email);
+      dejaEnvoyes.add(email);
+      envoyes += 1;
+    } catch {
+      erreurs += 1;
     }
   }
   return { envoyes, erreurs };
