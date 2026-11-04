@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BellRing, Clock, CheckCircle, Volume2 } from "lucide-react";
 import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
+import { SuiviEmails } from "@/components/dcop/SuiviEmails";
 import {
   type Convention,
   formatDate,
@@ -270,6 +271,9 @@ export function CriticalAlarm({
               </span>
             </div>
           </div>
+
+          <SuiviEmails conventionId={activeConvention.id} emailsAlerte={activeConvention.emails_alerte} />
+
 
           {!showSnoozeInput ? (
             <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
