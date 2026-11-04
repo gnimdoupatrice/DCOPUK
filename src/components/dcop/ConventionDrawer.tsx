@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { PointsFocauxEditor } from "@/components/dcop/PointsFocauxEditor";
 import { ProjetsEditor } from "@/components/dcop/ProjetsEditor";
 import { telechargerFichePdf } from "@/lib/fiche-pdf";
+import { SuiviEmails } from "@/components/dcop/SuiviEmails";
 import { validerPointFocal, validerProjet, type ConventionProjet, type PointFocal } from "@/lib/projets";
 import {
   PDF_BUCKET,
@@ -222,7 +223,6 @@ export function ConventionDrawer({
       return;
     }
     setBusy(true);
-    await supabase.from("convention_historique").delete().eq("convention_id", c.id);
     await supabase.from("convention_points_focaux").delete().eq("convention_id", c.id);
     await supabase.from("convention_projets").delete().eq("convention_id", c.id);
     if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
@@ -432,6 +432,8 @@ export function ConventionDrawer({
             )}
             {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
           </div>
+
+          <SuiviEmails conventionId={c.id} emailsAlerte={c.emails_alerte} historique />
 
           {/* Historique */}
           <div>
