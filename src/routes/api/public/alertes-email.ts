@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { destinatairesConvention, envoyerDestinataires, evenementEmailDu, type ConventionEmail, type TypeEmailAlerte } from "@/lib/alertes-email";
+import { EchecEnvoi, PLAFOND_EMAILS_PAR_PASSAGE, destinatairesConvention, envoyerDestinataires, evenementEmailDu, motifErreurClair, receiptClos, type ConventionEmail, type ReceiptEnvoi, type TypeEmailAlerte } from "@/lib/alertes-email";
 import { type PointFocal } from "@/lib/projets";
 
 const SUPABASE_URL = "https://yebrrcwlewbktsvggfrx.supabase.co";
 const RESEND_URL = "https://api.resend.com/emails";
-const DESTINATAIRE = "beyeliakougnimdoupatrice13@gmail.com";
+const DIRECTION_PAR_DEFAUT = "beyeliakougnimdoupatrice13@gmail.com";
 
 function jetonValide(request: Request, secret: string): boolean {
   const recu = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -41,8 +41,10 @@ async function envoyer(c: ConventionEmail, type: TypeEmailAlerte, moment: Date, 
     },
     body: JSON.stringify({ from, to: [email], subject: `${titre} : ${c.partenaire_nom}`, html }),
     signal: AbortSignal.timeout(15000),
+  }).catch(() => {
+    throw new EchecEnvoi(null);
   });
-  if (!res.ok) throw new Error(`Resend [${res.status}]`);
+  if (!res.ok) throw new EchecEnvoi(res.status);
 }
 
 async function traiter(request: Request) {
@@ -53,6 +55,8 @@ async function traiter(request: Request) {
   const serviceKey = process.env["DCOP_SUPABASE_SERVICE_ROLE_KEY"];
   const apiKey = process.env["RESEND_API_KEY"];
   const from = process.env["RESEND_FROM_EMAIL"];
+  const directionEnv = (process.env["DCOP_DIRECTION_EMAIL"] ?? "").trim().toLowerCase();
+  const DESTINATAIRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(directionEnv) ? directionEnv : DIRECTION_PAR_DEFAUT;
   if (!serviceKey || !apiKey || !from || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from) || from.toLowerCase().endsWith("@resend.dev")) {
     return Response.json({ error: "Configuration d’envoi incomplète : adresse d’expédition sur un domaine vérifié requise" }, { status: 503 });
   }
@@ -84,24 +88,35 @@ async function traiter(request: Request) {
   const ids = dues.map(({ c }) => c.id);
   const [focaux, receipts] = await Promise.all([
     db.from("convention_points_focaux").select("convention_id,email,recoit_alertes").in("convention_id", ids).eq("recoit_alertes", true),
-    db.from("convention_email_envois").select("convention_id,type_evenement,moment_evenement,destinataire").in("convention_id", ids),
+    db.from("convention_email_envois").select("convention_id,type_evenement,moment_evenement,destinataire,statut,definitif,tentatives").in("convention_id", ids),
   ]);
   if (focaux.error || receipts.error) return Response.json({ error: "Lecture des destinataires impossible : vérifier le script de mise à jour" }, { status: 500 });
   let envoyes = 0;
   let erreurs = 0;
+  const lignes = (receipts.data ?? []) as ReceiptEnvoi[];
   for (const { c, evenement } of dues) {
+    const budget = PLAFOND_EMAILS_PAR_PASSAGE - envoyes - erreurs;
+    if (budget <= 0) break;
     try {
       const destinataires = destinatairesConvention(DESTINATAIRE, c, (focaux.data ?? []) as Pick<PointFocal, "convention_id" | "email" | "recoit_alertes">[]);
-      const dejaEnvoyes = new Set<string>((receipts.data ?? []).filter((r) => r.convention_id === c.id && r.type_evenement === evenement.type && new Date(r.moment_evenement).toISOString() === evenement.cle).map((r) => r.destinataire));
+      const duMoment = lignes.filter((r) => r.convention_id === c.id && r.type_evenement === evenement.type && new Date(r.moment_evenement).toISOString() === evenement.cle);
+      const dejaEnvoyes = new Set<string>(duMoment.filter(receiptClos).map((r) => r.destinataire));
+      const cle = { convention_id: c.id, type_evenement: evenement.type, moment_evenement: evenement.cle };
       // Les anciens marqueurs ne concernaient que la Direction, jamais les partenaires.
       const ancien = evenement.type === "alerte" ? c.email_alerte_envoye_pour : c.email_report_envoye_pour;
       if (ancien && new Date(ancien).toISOString() === evenement.cle) dejaEnvoyes.add(DESTINATAIRE);
       const result = await envoyerDestinataires(destinataires, dejaEnvoyes,
         (email) => envoyer(c, evenement.type, evenement.moment, email, apiKey, `DCOP Université de Kara <${from}>`, now),
         async (email) => {
-          const { error: receiptError } = await db.from("convention_email_envois").upsert({ convention_id: c.id, type_evenement: evenement.type, moment_evenement: evenement.cle, destinataire: email }, { onConflict: "convention_id,type_evenement,moment_evenement,destinataire" });
+          const { error: receiptError } = await db.from("convention_email_envois").upsert({ ...cle, destinataire: email, statut: "envoye", motif_erreur: null, definitif: false, envoye_le: new Date().toISOString() }, { onConflict: "convention_id,type_evenement,moment_evenement,destinataire" });
           if (receiptError) throw new Error("Mémorisation impossible");
-        });
+        },
+        async (email, err) => {
+          const { motif, definitif } = motifErreurClair(err instanceof EchecEnvoi ? err.statutHttp : null);
+          const precedent = duMoment.find((r) => r.destinataire === email);
+          await db.from("convention_email_envois").upsert({ ...cle, destinataire: email, statut: "echec", motif_erreur: motif, definitif, tentatives: (precedent?.tentatives ?? 0) + 1, envoye_le: new Date().toISOString() }, { onConflict: "convention_id,type_evenement,moment_evenement,destinataire" });
+        },
+        budget);
       envoyes += result.envoyes;
       erreurs += result.erreurs;
       if (destinataires.every((email) => dejaEnvoyes.has(email))) {
