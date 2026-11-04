@@ -24,3 +24,5 @@
 - Email alert eligibility and recipient isolation live in `src/lib/alertes-email.ts`; the protected cron route sends individually and persists per-event/per-recipient receipts so partial failures do not resend successful deliveries.
 - Keep the external email provider configuration server-only; require a verified sender domain before sending partner alerts because the provider test sender cannot deliver to partners.
 - Keep focal-point email assignments separate from explicit partner email lists; resolve assigned focal points at send time so removing a focal point removes its implicit subscription.
+- Email receipts in `convention_email_envois` store success/failure with a plain-French reason (`motifErreurClair` in `src/lib/alertes-email.ts`); the cron caps sends per run and retries only temporary failures, so quota incidents cannot loop. The UI reads them via `SuiviEmails.tsx`.
+- `convention_historique` is append-only in the database; never delete history rows from the client (convention deletion cascades).
