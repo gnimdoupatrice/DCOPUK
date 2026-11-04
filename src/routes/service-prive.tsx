@@ -270,6 +270,24 @@ function Espace({ email }: { email: string }) {
     setLoading(false);
   }
 
+  // Déconnexion automatique après 2 heures sans activité (postes partagés)
+  useEffect(() => {
+    const DELAI = 2 * 60 * 60 * 1000;
+    let derniere = Date.now();
+    const activite = () => {
+      derniere = Date.now();
+    };
+    const evts = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
+    evts.forEach((e) => window.addEventListener(e, activite, { passive: true }));
+    const id = window.setInterval(() => {
+      if (Date.now() - derniere > DELAI) void supabase.auth.signOut();
+    }, 60_000);
+    return () => {
+      evts.forEach((e) => window.removeEventListener(e, activite));
+      window.clearInterval(id);
+    };
+  }, []);
+
   useEffect(() => {
     load();
     async function rafraichir() {
