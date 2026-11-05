@@ -908,6 +908,7 @@ function Kpi({
 /* ---------------- Formulaire (entonnoir) ---------------- */
 
 type InfoCreation = { nom: string; pole: string; echeance: string; alerte: string; finCorrection: Date };
+const CLE_BROUILLON = "dcop-brouillon-convention";
 const lk = (l: boolean) => (l ? " cursor-not-allowed bg-muted opacity-70" : "");
 const cad = (l: boolean) => (l ? " 🔒" : "");
 
