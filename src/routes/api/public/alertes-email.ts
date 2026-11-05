@@ -15,6 +15,18 @@ function jetonValide(request: Request, secret: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_V6Px8U6jSjPTYlKCZUPE9g_ekt8ivNi";
+
+async function sessionValide(request: Request): Promise<boolean> {
+  const jeton = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jeton || jeton.length > 4096) return false;
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${jeton}` },
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  return !!res?.ok;
+}
+
 const fmt = (d: Date) =>
   d.toLocaleString("fr-FR", { timeZone: "Africa/Lome", dateStyle: "long", timeStyle: "short" });
 
@@ -49,9 +61,11 @@ async function envoyer(c: ConventionEmail, type: TypeEmailAlerte, moment: Date, 
 
 async function traiter(request: Request) {
   // Vercel Cron envoie automatiquement « Authorization: Bearer $CRON_SECRET ».
+  // Deux appelants autorisés : le robot autonome (jeton secret) ou un membre DCOP connecté
+  // dont l'écran vient de faire sonner l'alarme. L'anti-doublon rend les deux sans risque.
   const secret = process.env["ALERTES_CRON_SECRET"] || process.env["CRON_SECRET"];
-  if (!secret) return Response.json({ error: "Configuration incomplète" }, { status: 503 });
-  if (!jetonValide(request, secret)) return new Response("Unauthorized", { status: 401 });
+  const robot = !!secret && jetonValide(request, secret);
+  if (!robot && !(await sessionValide(request))) return new Response("Unauthorized", { status: 401 });
   if (new URL(request.url).search) return Response.json({ error: "Paramètres non autorisés" }, { status: 400 });
   const serviceKey = process.env["DCOP_SUPABASE_SERVICE_ROLE_KEY"];
   const apiKey = process.env["RESEND_API_KEY"];
