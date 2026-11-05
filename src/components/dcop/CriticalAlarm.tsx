@@ -153,6 +153,7 @@ export function CriticalAlarm({
   const [isRinging, setIsRinging] = useState(false);
   const [snoozeDateTime, setSnoozeDateTime] = useState("");
   const [showSnoozeInput, setShowSnoozeInput] = useState(false);
+  const [suiviVersion, setSuiviVersion] = useState(0);
   const sirene = useRef<SireneLimitee | null>(null);
 
   // Vérification chaque minute
@@ -219,6 +220,15 @@ export function CriticalAlarm({
     void sirene.current.start(() => {
       setIsRinging(false);
     });
+
+    // Envoi immédiat des e-mails à la seconde où l'alarme sonne (anti-doublon côté serveur).
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const jeton = data.session?.access_token;
+      if (!jeton) return;
+      await fetch("/api/public/alertes-email", { method: "POST", headers: { Authorization: `Bearer ${jeton}` } }).catch(() => null);
+      setSuiviVersion((v) => v + 1);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventionDeclenchee]);
 
@@ -310,7 +320,7 @@ export function CriticalAlarm({
           </div>
 
           <ContactsDirects conventionId={activeConvention.id} />
-          <SuiviEmails conventionId={activeConvention.id} emailsAlerte={activeConvention.emails_alerte} />
+          <SuiviEmails key={suiviVersion} conventionId={activeConvention.id} emailsAlerte={activeConvention.emails_alerte} />
 
 
           {!showSnoozeInput ? (
