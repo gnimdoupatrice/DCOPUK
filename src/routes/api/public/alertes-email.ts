@@ -48,7 +48,8 @@ async function envoyer(c: ConventionEmail, type: TypeEmailAlerte, moment: Date, 
 }
 
 async function traiter(request: Request) {
-  const secret = process.env["ALERTES_CRON_SECRET"];
+  // Vercel Cron envoie automatiquement « Authorization: Bearer $CRON_SECRET ».
+  const secret = process.env["ALERTES_CRON_SECRET"] || process.env["CRON_SECRET"];
   if (!secret) return Response.json({ error: "Configuration incomplète" }, { status: 503 });
   if (!jetonValide(request, secret)) return new Response("Unauthorized", { status: 401 });
   if (new URL(request.url).search) return Response.json({ error: "Paramètres non autorisés" }, { status: 400 });
@@ -135,6 +136,7 @@ export const Route = createFileRoute("/api/public/alertes-email")({
   server: {
     handlers: {
       POST: ({ request }) => traiter(request),
+      GET: ({ request }) => traiter(request),
     },
   },
 });
