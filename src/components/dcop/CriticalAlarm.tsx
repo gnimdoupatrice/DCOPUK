@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BellRing, Clock, CheckCircle, Volume2 } from "lucide-react";
+import { BellRing, Clock, CheckCircle, Volume2, Phone, MessageCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
 import { SuiviEmails } from "@/components/dcop/SuiviEmails";
 import {
@@ -9,6 +10,42 @@ import {
   etatAlerte,
   momentReferenceAlerte,
 } from "@/lib/conventions";
+
+type Contact = { id: string; nom: string; prenom: string; fonction: string | null; telephone: string | null; institution_type: string };
+
+function ContactsDirects({ conventionId }: { conventionId: string }) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  useEffect(() => {
+    let actif = true;
+    void supabase
+      .from("convention_points_focaux")
+      .select("id, nom, prenom, fonction, telephone, institution_type")
+      .eq("convention_id", conventionId)
+      .then(({ data }) => { if (actif) setContacts(((data ?? []) as Contact[]).filter((c) => c.telephone?.trim())); });
+    return () => { actif = false; };
+  }, [conventionId]);
+  if (contacts.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground">Joindre un point focal</p>
+      {contacts.map((c) => {
+        const tel = c.telephone!.replace(/[^\d+]/g, "");
+        return (
+          <div key={c.id} className="flex items-center justify-between gap-2 rounded-lg border bg-background p-2">
+            <div className="min-w-0 text-xs">
+              <p className="truncate font-semibold">{c.prenom} {c.nom}</p>
+              <p className="truncate text-muted-foreground">{c.institution_type === "universite" ? "Université de Kara" : "Partenaire"}{c.fonction ? ` — ${c.fonction}` : ""}</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <a href={`tel:${tel}`} aria-label={`Appeler ${c.prenom} ${c.nom}`} className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground"><Phone className="h-4 w-4" /></a>
+              <a href={`https://wa.me/${tel.replace(/^\+/, "")}`} target="_blank" rel="noopener noreferrer" aria-label={`WhatsApp ${c.prenom} ${c.nom}`} className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white"><MessageCircle className="h-4 w-4" /></a>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const AUDIO_PERSO = "/alarme.mp3";
 const DUREE_ALARME_MS = 60_000; // 1 minute complète (60 secondes)
@@ -116,6 +153,7 @@ export function CriticalAlarm({
   const [isRinging, setIsRinging] = useState(false);
   const [snoozeDateTime, setSnoozeDateTime] = useState("");
   const [showSnoozeInput, setShowSnoozeInput] = useState(false);
+  const [suiviVersion, setSuiviVersion] = useState(0);
   const sirene = useRef<SireneLimitee | null>(null);
 
   // Vérification chaque minute
@@ -182,6 +220,15 @@ export function CriticalAlarm({
     void sirene.current.start(() => {
       setIsRinging(false);
     });
+
+    // Envoi immédiat des e-mails à la seconde où l'alarme sonne (anti-doublon côté serveur).
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const jeton = data.session?.access_token;
+      if (!jeton) return;
+      await fetch("/api/public/alertes-email", { method: "POST", headers: { Authorization: `Bearer ${jeton}` } }).catch(() => null);
+      setSuiviVersion((v) => v + 1);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventionDeclenchee]);
 
@@ -272,7 +319,8 @@ export function CriticalAlarm({
             </div>
           </div>
 
-          <SuiviEmails conventionId={activeConvention.id} emailsAlerte={activeConvention.emails_alerte} />
+          <ContactsDirects conventionId={activeConvention.id} />
+          <SuiviEmails key={suiviVersion} conventionId={activeConvention.id} emailsAlerte={activeConvention.emails_alerte} />
 
 
           {!showSnoozeInput ? (

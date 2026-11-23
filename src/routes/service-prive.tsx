@@ -908,6 +908,7 @@ function Kpi({
 /* ---------------- Formulaire (entonnoir) ---------------- */
 
 type InfoCreation = { nom: string; pole: string; echeance: string; alerte: string; finCorrection: Date };
+const CLE_BROUILLON = "dcop-brouillon-convention";
 const lk = (l: boolean) => (l ? " cursor-not-allowed bg-muted opacity-70" : "");
 const cad = (l: boolean) => (l ? " 🔒" : "");
 
@@ -952,6 +953,47 @@ function ConventionForm({
   const [rebours, setRebours] = useState<Rebours>(REBOURS_VIDE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Brouillon automatique (création uniquement) : rien n'est perdu en cas de coupure.
+  const [brouillonPret, setBrouillonPret] = useState(!!initial);
+  const [brouillonRestaure, setBrouillonRestaure] = useState(false);
+  useEffect(() => {
+    if (initial) return;
+    try {
+      const b = JSON.parse(window.localStorage.getItem(CLE_BROUILLON) ?? "null");
+      if (b && typeof b === "object") {
+        setPole(b.pole ?? ""); setNouveauPole(b.nouveauPole ?? ""); setCadre(b.cadre ?? ""); setCadreLibre(b.cadreLibre ?? "");
+        setNom(b.nom ?? ""); setPays(b.pays ?? ""); setVille(b.ville ?? ""); setThematique(b.thematique ?? "");
+        setSignature(b.signature ?? ""); setDateEcheance(b.dateEcheance ?? ""); setDateAlerte(b.dateAlerte ?? ""); setHeureAlerte(b.heureAlerte ?? "");
+        setPreavis(b.preavis ?? ""); setReconduction(b.reconduction ?? "Non reconductible");
+        setEmailsAlerte(Array.isArray(b.emailsAlerte) ? b.emailsAlerte : []);
+        setPointsFocaux(Array.isArray(b.pointsFocaux) ? b.pointsFocaux : []);
+        setProjets(Array.isArray(b.projets) ? b.projets : []);
+        setBrouillonRestaure(true);
+      }
+    } catch { /* brouillon illisible : ignoré */ }
+    setBrouillonPret(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (initial || !brouillonPret) return;
+    const t = window.setTimeout(() => {
+      const data = { pole, nouveauPole, cadre, cadreLibre, nom, pays, ville, thematique, signature, dateEcheance, dateAlerte, heureAlerte, preavis, reconduction, emailsAlerte, pointsFocaux, projets };
+      const vide = !pole && !nom.trim() && !signature && !dateEcheance && pointsFocaux.length === 0 && projets.length === 0 && emailsAlerte.length === 0;
+      try {
+        if (vide) window.localStorage.removeItem(CLE_BROUILLON);
+        else window.localStorage.setItem(CLE_BROUILLON, JSON.stringify(data));
+      } catch { /* stockage plein ou indisponible */ }
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [initial, brouillonPret, pole, nouveauPole, cadre, cadreLibre, nom, pays, ville, thematique, signature, dateEcheance, dateAlerte, heureAlerte, preavis, reconduction, emailsAlerte, pointsFocaux, projets]);
+  function viderBrouillon() {
+    window.localStorage.removeItem(CLE_BROUILLON);
+    setPole(""); setNouveauPole(""); setCadre(""); setCadreLibre(""); setNom(""); setPays(""); setVille(""); setThematique("");
+    setSignature(""); setDateEcheance(""); setDateAlerte(""); setHeureAlerte(""); setPreavis(""); setReconduction("Non reconductible");
+    setEmailsAlerte([]); setPointsFocaux([]); setProjets([]); setRebours(REBOURS_VIDE); setDureeAns(""); setDureeMois("");
+    setBrouillonRestaure(false);
+  }
 
   const poleFinal = pole === "__new" ? nouveauPole.trim() : pole;
   const cadres = cadresPourPole(modelesCadres, poleFinal);
@@ -1156,6 +1198,7 @@ function ConventionForm({
       }
     }
     setBusy(false);
+    if (!initial) window.localStorage.removeItem(CLE_BROUILLON);
     onSaved(
       initial
         ? null
@@ -1178,6 +1221,12 @@ function ConventionForm({
             <X className="h-5 w-5" />
           </button>
         </div>
+        {!initial && brouillonRestaure && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
+            <span>Brouillon restauré : votre saisie précédente a été récupérée.</span>
+            <button type="button" onClick={viderBrouillon} className="font-semibold text-uk-blue underline">Vider le brouillon</button>
+          </div>
+        )}
         {initial && sas === "libre" && (
           <p className="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
             Convention récente : modification complète autorisée. Il vous reste environ {heuresRestantes} h pour corriger les erreurs de saisie.

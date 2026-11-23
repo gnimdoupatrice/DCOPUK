@@ -26,3 +26,4 @@
 - Keep focal-point email assignments separate from explicit partner email lists; resolve assigned focal points at send time so removing a focal point removes its implicit subscription.
 - Email receipts in `convention_email_envois` store success/failure with a plain-French reason (`motifErreurClair` in `src/lib/alertes-email.ts`); the cron caps sends per run and retries only temporary failures, so quota incidents cannot loop. The UI reads them via `SuiviEmails.tsx`.
 - `convention_historique` is append-only in the database; never delete history rows from the client (convention deletion cascades).
+- Alert emails fire from two idempotent triggers: the ringing CriticalAlarm (signed-in session) and a per-minute pg_cron call (`supabase/horloge-alertes.sql`, CRON_SECRET); never reintroduce a fixed daily schedule.
