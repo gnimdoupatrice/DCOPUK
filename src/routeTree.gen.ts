@@ -10,12 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as EnrolementRouteImport } from './routes/enrolement'
 import { Route as ServicePriveRouteImport } from './routes/service-prive'
 import { Route as ApiPublicAlertesEmailRouteImport } from './routes/api/public/alertes-email'
+import { Route as ApiPublicEnrolementRouteImport } from './routes/api/public/enrolement'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnrolementRoute = EnrolementRouteImport.update({
+  id: '/enrolement',
+  path: '/enrolement',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ServicePriveRoute = ServicePriveRouteImport.update({
@@ -28,35 +35,64 @@ const ApiPublicAlertesEmailRoute = ApiPublicAlertesEmailRouteImport.update({
   path: '/api/public/alertes-email',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicEnrolementRoute = ApiPublicEnrolementRouteImport.update({
+  id: '/api/public/enrolement',
+  path: '/api/public/enrolement',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/service-prive' | '/api/public/alertes-email'
+  fullPaths:
+    | '/'
+    | '/enrolement'
+    | '/service-prive'
+    | '/api/public/alertes-email'
+    | '/api/public/enrolement'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/service-prive' | '/api/public/alertes-email'
-  id: '__root__' | '/' | '/service-prive' | '/api/public/alertes-email'
+  to:
+    | '/'
+    | '/enrolement'
+    | '/service-prive'
+    | '/api/public/alertes-email'
+    | '/api/public/enrolement'
+  id:
+    | '__root__'
+    | '/'
+    | '/enrolement'
+    | '/service-prive'
+    | '/api/public/alertes-email'
+    | '/api/public/enrolement'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EnrolementRoute: typeof EnrolementRoute
   ServicePriveRoute: typeof ServicePriveRoute
   ApiPublicAlertesEmailRoute: typeof ApiPublicAlertesEmailRoute
+  ApiPublicEnrolementRoute: typeof ApiPublicEnrolementRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -66,6 +102,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/enrolement': {
+      id: '/enrolement'
+      path: '/enrolement'
+      fullPath: '/enrolement'
+      preLoaderRoute: typeof EnrolementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/service-prive': {
@@ -82,13 +125,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAlertesEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/enrolement': {
+      id: '/api/public/enrolement'
+      path: '/api/public/enrolement'
+      fullPath: '/api/public/enrolement'
+      preLoaderRoute: typeof ApiPublicEnrolementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EnrolementRoute: EnrolementRoute,
   ServicePriveRoute: ServicePriveRoute,
   ApiPublicAlertesEmailRoute: ApiPublicAlertesEmailRoute,
+  ApiPublicEnrolementRoute: ApiPublicEnrolementRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
