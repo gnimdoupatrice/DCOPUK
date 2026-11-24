@@ -72,8 +72,8 @@ async function traiter(request: Request) {
   const from = process.env["RESEND_FROM_EMAIL"];
   const directionEnv = (process.env["DCOP_DIRECTION_EMAIL"] ?? "").trim().toLowerCase();
   const DESTINATAIRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(directionEnv) ? directionEnv : DIRECTION_PAR_DEFAUT;
-  if (!serviceKey || !apiKey || !from || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from) || from.toLowerCase().endsWith("@resend.dev")) {
-    return Response.json({ error: "Configuration d’envoi incomplète : adresse d’expédition sur un domaine vérifié requise" }, { status: 503 });
+  if (!serviceKey || !apiKey || !from || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from)) {
+    return Response.json({ error: "Configuration d’envoi incomplète : adresse d’expédition valide requise" }, { status: 503 });
   }
 
   const db = createClient(SUPABASE_URL, serviceKey, {
@@ -129,6 +129,8 @@ async function traiter(request: Request) {
         async (email, err) => {
           const { motif, definitif } = motifErreurClair(err instanceof EchecEnvoi ? err.statutHttp : null);
           const precedent = duMoment.find((r) => r.destinataire === email);
+          // Rejet définitif (ex. 403 du mode test Resend) : tracé puis clos, sans bloquer les autres.
+          if (definitif) dejaEnvoyes.add(email);
           await db.from("convention_email_envois").upsert({ ...cle, destinataire: email, statut: "echec", motif_erreur: motif, definitif, tentatives: (precedent?.tentatives ?? 0) + 1, envoye_le: new Date().toISOString() }, { onConflict: "convention_id,type_evenement,moment_evenement,destinataire" });
         },
         budget);
@@ -143,7 +145,8 @@ async function traiter(request: Request) {
       erreurs += 1;
     }
   }
-  return Response.json({ envoyes, erreurs }, { status: erreurs ? 503 : 200 });
+  // 200 si tout est parti, 207 si au moins un e-mail délivré malgré des rejets, 503 si rien n’est parti.
+  return Response.json({ envoyes, erreurs }, { status: !erreurs ? 200 : envoyes ? 207 : 503 });
 }
 
 export const Route = createFileRoute("/api/public/alertes-email")({
