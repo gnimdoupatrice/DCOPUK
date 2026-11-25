@@ -97,6 +97,9 @@ export interface Convention {
   emails_alerte?: string[] | null;
   alarme_arretee_le?: string | null;
   alarme_reportee_jusqu_a?: string | null;
+  supprime_le?: string | null;
+  supprime_par?: string | null;
+  motif_suppression?: string | null;
 }
 
 export interface HistoriqueEntry {
@@ -426,4 +429,43 @@ export function libelleAlarme(c: Convention): string {
     default:
       return "Aucune alerte programmée";
   }
+}
+
+// ============================================================
+// Corbeille réversible (Tâche 3.2)
+// ============================================================
+export const CORBEILLE_JOURS = 30;
+
+export function estEnCorbeille(c: Convention): boolean {
+  return !!c.supprime_le;
+}
+
+/** Jours restants avant la purge définitive automatique (0 = purge imminente). */
+export function joursAvantPurge(c: Convention, now: number = Date.now()): number {
+  if (!c.supprime_le) return CORBEILLE_JOURS;
+  const fin = new Date(c.supprime_le).getTime() + CORBEILLE_JOURS * 86_400_000;
+  return Math.max(0, Math.ceil((fin - now) / 86_400_000));
+}
+
+/** Doublon strict : même partenaire (casse/espaces ignorés), même pôle, même date de signature et même date de fin. */
+export function trouverDoublonStrict(c: Convention, actives: Convention[]): Convention | null {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ");
+  return (
+    actives.find(
+      (a) =>
+        a.id !== c.id &&
+        !a.supprime_le &&
+        norm(a.partenaire_nom) === norm(c.partenaire_nom) &&
+        norm(a.pole) === norm(c.pole) &&
+        a.date_signature === c.date_signature &&
+        a.date_echeance === c.date_echeance,
+    ) ?? null
+  );
+}
+
+/** À la restauration : l'alerte (ou son report) est-elle déjà passée sans avoir été arrêtée ? */
+export function alerteEchueARestaurer(c: Convention, now: number = Date.now()): boolean {
+  if (c.alarme_arretee_le || c.archived) return false;
+  const m = momentReferenceAlerte(c);
+  return !!m && m.getTime() <= now;
 }
