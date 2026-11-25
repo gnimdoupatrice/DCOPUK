@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CriticalAlarm } from "@/components/dcop/CriticalAlarm";
+import { EquipeDcop, compterEnAttente } from "@/components/dcop/EquipeDcop";
+import { peutAgir, peutGererEquipe, type Acces } from "@/lib/equipe";
 import { InstallPwa } from "@/components/dcop/InstallPwa";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -220,6 +222,31 @@ function Espace({ email }: { email: string }) {
 
   const [alarmeActiveId, setAlarmeActiveId] = useState<string | null>(null);
   const [resumeConnexion, setResumeConnexion] = useState(false);
+  const [acces, setAcces] = useState<Acces | null>(null);
+  const [accesCharge, setAccesCharge] = useState(false);
+  const [showEquipe, setShowEquipe] = useState(false);
+  const [enAttente, setEnAttente] = useState(0);
+  const [refus, setRefus] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      const { data: u } = await supabase.auth.getUser();
+      const { data, error } = await supabase.from("dcop_roles").select("role, actif").eq("user_id", u.user?.id ?? "").maybeSingle();
+      // Script d'équipe non exécuté : on ne bloque pas le compte existant
+      setAcces(error ? { role: "directeur", actif: true } : ((data as Acces | null) ?? null));
+      setAccesCharge(true);
+    })();
+  }, []);
+  const lectureSeule = accesCharge && !peutAgir(acces);
+  const directeur = peutGererEquipe(acces);
+  useEffect(() => { if (directeur) void compterEnAttente().then(setEnAttente); }, [directeur]);
+  function bloquer(e: React.MouseEvent) {
+    if (!lectureSeule) return;
+    const b = (e.target as HTMLElement).closest("button");
+    if (!b) return;
+    const t = (b.getAttribute("aria-label") ?? "") + " " + (b.textContent ?? "");
+    if (/fermer|voir|ouvrir|télécharger|pdf|fiche|exporter|filtr|réinitialiser|annuler/i.test(t) && !/supprimer|joindre|remplacer/i.test(t)) return;
+    e.preventDefault(); e.stopPropagation(); setRefus(true);
+  }
   const resumeStats = useMemo(() => {
     const actives = conventions.filter((c) => !c.archived);
     return {
@@ -488,6 +515,12 @@ function Espace({ email }: { email: string }) {
               ← <span className="sm:hidden">Public</span><span className="hidden sm:inline">Service Public</span>
             </Link>
             <span className="hidden opacity-80 md:inline">{email}</span>
+            {directeur && (
+              <button onClick={() => setShowEquipe(true)} className="relative inline-flex items-center gap-1.5 rounded-md border border-primary-foreground/40 px-2.5 py-1.5 font-semibold hover:bg-primary-foreground/10">
+                Équipe
+                {enAttente > 0 && <span className="rounded-full bg-uk-gold px-1.5 text-xs font-bold text-uk-navy">{enAttente}</span>}
+              </button>
+            )}
             <button
               onClick={() => supabase.auth.signOut()}
               className="inline-flex items-center gap-1.5 rounded-md bg-uk-gold px-3 py-1.5 font-semibold text-uk-navy hover:brightness-105"
@@ -498,7 +531,12 @@ function Espace({ email }: { email: string }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
+      {lectureSeule && (
+        <div className="bg-uk-orange/15 px-4 py-3 text-center text-sm font-semibold text-uk-orange">
+          Votre compte est en attente d’activation par le Directeur : consultation seule, aucune modification possible.
+        </div>
+      )}
+      <main onClickCapture={bloquer} className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
         {/* Cockpit */}
         <section>
           <h2 className="mb-4 text-lg font-bold text-uk-blue">Cockpit de synthèse</h2>
@@ -792,6 +830,7 @@ function Espace({ email }: { email: string }) {
       </main>
 
       {selected && (
+        <div onClickCapture={bloquer}>
         <ConventionDrawer
           convention={selected}
           onClose={() => setSelectedId(null)}
@@ -801,6 +840,7 @@ function Espace({ email }: { email: string }) {
             setShowForm(true);
           }}
         />
+        </div>
       )}
 
       {showForm && (
@@ -818,7 +858,17 @@ function Espace({ email }: { email: string }) {
         />
       )}
 
-      <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />
+      {accesCharge && !lectureSeule && <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />}
+      {showEquipe && <EquipeDcop moi={""} onClose={() => setShowEquipe(false)} onChanged={() => void compterEnAttente().then(setEnAttente)} />}
+      {refus && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" onClick={() => setRefus(false)}>
+          <div className="max-w-sm rounded-2xl bg-card p-6 text-center shadow-2xl">
+            <p className="font-bold text-uk-blue">Compte non activé</p>
+            <p className="mt-2 text-sm text-foreground/80">Votre compte n’est pas encore activé par le Directeur. Vous pouvez consulter, mais pas modifier.</p>
+            <button className="mt-4 rounded-lg bg-uk-blue px-4 py-2 text-sm font-semibold text-primary-foreground">J’ai compris</button>
+          </div>
+        </div>
+      )}
       {resumeConnexion && !alarmeActiveId && !actives.some((c) => etatAlerte(c) === "sonnerie") && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setResumeConnexion(false)}>
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
