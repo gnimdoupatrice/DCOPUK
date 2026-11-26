@@ -91,6 +91,7 @@ async function traiter(request: Request) {
     .from("conventions")
     .select("*")
     .eq("archived", false)
+    .is("supprime_le", null)
     .is("alarme_arretee_le", null);
   if (error) return Response.json({ error: "Lecture des conventions impossible" }, { status: 500 });
 

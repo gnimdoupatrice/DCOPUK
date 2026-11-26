@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CriticalAlarm } from "@/components/dcop/CriticalAlarm";
+import { Corbeille } from "@/components/dcop/Corbeille";
+import { mettreEnCorbeille } from "@/lib/corbeille";
+import { logHistorique } from "@/lib/historique";
 import { EquipeDcop, compterEnAttente } from "@/components/dcop/EquipeDcop";
 import { peutAgir, peutGererEquipe, type Acces } from "@/lib/equipe";
 import { InstallPwa } from "@/components/dcop/InstallPwa";
@@ -28,7 +31,7 @@ import {
 } from "lucide-react";
 import ukEmblem from "@/assets/uk-emblem.png";
 import { supabase } from "@/lib/supabase";
-import { ConventionDrawer, envoyerPdf, logHistorique } from "@/components/dcop/ConventionDrawer";
+import { ConventionDrawer, envoyerPdf } from "@/components/dcop/ConventionDrawer";
 import { EmailsAlerteInput } from "@/components/dcop/EmailsAlerteInput";
 import { PointsFocauxEditor } from "@/components/dcop/PointsFocauxEditor";
 import { ProjetsEditor } from "@/components/dcop/ProjetsEditor";
@@ -225,6 +228,7 @@ function Espace({ email }: { email: string }) {
   const [acces, setAcces] = useState<Acces | null>(null);
   const [accesCharge, setAccesCharge] = useState(false);
   const [showEquipe, setShowEquipe] = useState(false);
+  const [showCorbeille, setShowCorbeille] = useState(false);
   const [enAttente, setEnAttente] = useState(0);
   const [refus, setRefus] = useState(false);
   useEffect(() => {
@@ -238,6 +242,8 @@ function Espace({ email }: { email: string }) {
   }, []);
   const lectureSeule = accesCharge && !peutAgir(acces);
   const directeur = peutGererEquipe(acces);
+  const registre = useMemo(() => conventions.filter((c) => !c.supprime_le), [conventions]);
+  const corbeille = useMemo(() => conventions.filter((c) => !!c.supprime_le), [conventions]);
   useEffect(() => { if (directeur) void compterEnAttente().then(setEnAttente); }, [directeur]);
   function bloquer(e: React.MouseEvent) {
     if (!lectureSeule) return;
@@ -248,14 +254,14 @@ function Espace({ email }: { email: string }) {
     e.preventDefault(); e.stopPropagation(); setRefus(true);
   }
   const resumeStats = useMemo(() => {
-    const actives = conventions.filter((c) => !c.archived);
+    const actives = registre.filter((c) => !c.archived);
     return {
       enVigueur: actives.filter((c) => correspondCockpit(c, "actives")).length,
       reportee: actives.filter((c) => correspondCockpit(c, "reportee")).length,
       arretee: actives.filter((c) => correspondCockpit(c, "arretee")).length,
       expire: actives.filter((c) => correspondCockpit(c, "expire")).length,
     };
-  }, [conventions]);
+  }, [registre]);
 
   function handleSort(key: SortField) {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -345,33 +351,21 @@ function Espace({ email }: { email: string }) {
     };
   }, []);
 
-  const actives = useMemo(() => conventions.filter((c) => !c.archived), [conventions]);
-  const selected = conventions.find((c) => c.id === selectedId) ?? null;
+  const actives = useMemo(() => registre.filter((c) => !c.archived), [registre]);
+  const selected = registre.find((c) => c.id === selectedId) ?? null;
 
-  async function supprimerDirect(id: string, nom: string, pdfPath?: string | null) {
-    const saisie = window.prompt(
-      `Suppression définitive de la convention avec « ${nom} » et de son document PDF.\nCette action est irréversible.\n\nPour confirmer, tapez le nom du partenaire : ${nom}`,
-    );
-    if (saisie === null) return;
-    if (saisie.trim().toLowerCase() !== nom.trim().toLowerCase()) {
-      alert("Nom du partenaire incorrect : la suppression a été annulée.");
-      return;
-    }
+  async function supprimer(c: Convention) {
     try {
-      await supabase.from("convention_points_focaux").delete().eq("convention_id", id);
-      await supabase.from("convention_projets").delete().eq("convention_id", id);
-      if (pdfPath) {
-        await supabase.storage.from("conventions-pdf").remove([pdfPath]);
+      const message = await mettreEnCorbeille(c);
+      if (message === "annule") return;
+      if (message) {
+        alert(message);
+        return;
       }
-      const { error } = await supabase.from("conventions").delete().eq("id", id);
-      if (error) {
-        alert("Erreur lors de la suppression : " + error.message);
-      } else {
-        if (selectedId === id) setSelectedId(null);
-        await load();
-      }
+      if (selectedId === c.id) setSelectedId(null);
+      await load();
     } catch {
-      alert("Erreur inattendue lors de la suppression.");
+      alert("Erreur inattendue lors de la mise en corbeille.");
     }
   }
 
@@ -386,7 +380,7 @@ function Espace({ email }: { email: string }) {
 
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const list = conventions
+    const list = registre
       .filter((c) => (showArchived ? c.archived : !c.archived))
       .map((c) => {
         const limPreavis = dateLimitePreavis(c.date_echeance, c.preavis_mois);
@@ -421,7 +415,7 @@ function Espace({ email }: { email: string }) {
       if (va > vb) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [conventions, q, fPole, fStatut, fCockpit, showArchived, sortKey, sortAsc]);
+  }, [registre, q, fPole, fStatut, fCockpit, showArchived, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
     const parPole = poles.map((p) => ({ pole: p, n: actives.filter((c) => c.pole === p).length }));
@@ -515,6 +509,10 @@ function Espace({ email }: { email: string }) {
               ← <span className="sm:hidden">Public</span><span className="hidden sm:inline">Service Public</span>
             </Link>
             <span className="hidden opacity-80 md:inline">{email}</span>
+            <button onClick={() => setShowCorbeille(true)} className="inline-flex items-center gap-1.5 rounded-md border border-primary-foreground/40 px-2.5 py-1.5 font-semibold hover:bg-primary-foreground/10">
+              <Trash2 className="h-4 w-4" /> Corbeille
+              {corbeille.length > 0 && <span className="rounded-full bg-primary-foreground/15 px-1.5 text-xs font-bold">{corbeille.length}</span>}
+            </button>
             {directeur && (
               <button onClick={() => setShowEquipe(true)} className="relative inline-flex items-center gap-1.5 rounded-md border border-primary-foreground/40 px-2.5 py-1.5 font-semibold hover:bg-primary-foreground/10">
                 Équipe
@@ -811,9 +809,9 @@ function Espace({ email }: { email: string }) {
                           )}
                           <button
                             type="button"
-                            onClick={() => supprimerDirect(c.id, c.partenaire_nom, c.pdf_path)}
-                            title="Supprimer la convention"
-                            aria-label="Supprimer la convention"
+                            onClick={() => void supprimer(c)}
+                            title="Mettre en corbeille"
+                            aria-label="Mettre en corbeille"
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -846,7 +844,7 @@ function Espace({ email }: { email: string }) {
       {showForm && (
         <ConventionForm
           poles={poles}
-          cadresParPole={cadresParPole(conventions)}
+          cadresParPole={cadresParPole(registre)}
           initial={editing}
           onClose={() => setShowForm(false)}
           onSaved={(info) => {
@@ -858,7 +856,12 @@ function Espace({ email }: { email: string }) {
         />
       )}
 
-      {accesCharge && !lectureSeule && <CriticalAlarm conventions={conventions} onRefresh={load} onActiveChange={setAlarmeActiveId} />}
+      {accesCharge && !lectureSeule && <CriticalAlarm conventions={registre} onRefresh={load} onActiveChange={setAlarmeActiveId} />}
+      {showCorbeille && (
+        <div onClickCapture={bloquer}>
+          <Corbeille corbeille={corbeille} actives={actives} onClose={() => setShowCorbeille(false)} onChanged={load} />
+        </div>
+      )}
       {showEquipe && <EquipeDcop moi={""} onClose={() => setShowEquipe(false)} onChanged={() => void compterEnAttente().then(setEnAttente)} />}
       {refus && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" onClick={() => setRefus(false)}>

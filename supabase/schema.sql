@@ -221,3 +221,14 @@ create trigger verrou_convention_48h before update on public.conventions
 
 -- 4. À vérifier dans le tableau de bord Supabase (Authentication > Sign In / Providers) :
 --    désactiver « Allow new users to sign up » pour que seuls les comptes créés par la DCOP existent.
+
+-- ============================================================
+-- Corbeille réversible — 30 jours (Tâche 3.2, idempotent)
+-- Les conventions supprimées restent lisibles par le personnel, mais sont
+-- exclues du registre, du cockpit, des alarmes et des e-mails par l'application.
+-- La purge quotidienne est configurée dans horloge-alertes.sql.
+-- ============================================================
+alter table public.conventions add column if not exists supprime_le timestamptz;
+alter table public.conventions add column if not exists supprime_par uuid references auth.users(id) on delete set null;
+alter table public.conventions add column if not exists motif_suppression text;
+create index if not exists idx_conventions_corbeille on public.conventions(supprime_le) where supprime_le is not null;

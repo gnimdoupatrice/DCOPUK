@@ -20,4 +20,19 @@ select cron.schedule(
   $$
 );
 
+-- Purge quotidienne des conventions restées 30 jours complets en corbeille.
+select cron.unschedule('purge-corbeille-dcop')
+where exists (select 1 from cron.job where jobname = 'purge-corbeille-dcop');
+
+select cron.schedule(
+  'purge-corbeille-dcop',
+  '17 3 * * *',
+  $$
+  select net.http_post(
+    url := '<ADRESSE_DU_SITE>/api/public/corbeille',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer <CRON_SECRET>')
+  );
+  $$
+);
+
 -- Vérifier : select * from cron.job;  Historique : select * from cron.job_run_details order by start_time desc limit 10;

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as EnrolementRouteImport } from './routes/enrolement'
 import { Route as ServicePriveRouteImport } from './routes/service-prive'
 import { Route as ApiPublicAlertesEmailRouteImport } from './routes/api/public/alertes-email'
+import { Route as ApiPublicCorbeilleRouteImport } from './routes/api/public/corbeille'
 import { Route as ApiPublicEnrolementRouteImport } from './routes/api/public/enrolement'
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,6 +36,11 @@ const ApiPublicAlertesEmailRoute = ApiPublicAlertesEmailRouteImport.update({
   path: '/api/public/alertes-email',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCorbeilleRoute = ApiPublicCorbeilleRouteImport.update({
+  id: '/api/public/corbeille',
+  path: '/api/public/corbeille',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicEnrolementRoute = ApiPublicEnrolementRouteImport.update({
   id: '/api/public/enrolement',
   path: '/api/public/enrolement',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/corbeille': typeof ApiPublicCorbeilleRoute
   '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/corbeille': typeof ApiPublicCorbeilleRoute
   '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRoutesById {
@@ -61,6 +69,7 @@ export interface FileRoutesById {
   '/enrolement': typeof EnrolementRoute
   '/service-prive': typeof ServicePriveRoute
   '/api/public/alertes-email': typeof ApiPublicAlertesEmailRoute
+  '/api/public/corbeille': typeof ApiPublicCorbeilleRoute
   '/api/public/enrolement': typeof ApiPublicEnrolementRoute
 }
 export interface FileRouteTypes {
@@ -70,6 +79,7 @@ export interface FileRouteTypes {
     | '/enrolement'
     | '/service-prive'
     | '/api/public/alertes-email'
+    | '/api/public/corbeille'
     | '/api/public/enrolement'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -77,6 +87,7 @@ export interface FileRouteTypes {
     | '/enrolement'
     | '/service-prive'
     | '/api/public/alertes-email'
+    | '/api/public/corbeille'
     | '/api/public/enrolement'
   id:
     | '__root__'
@@ -84,6 +95,7 @@ export interface FileRouteTypes {
     | '/enrolement'
     | '/service-prive'
     | '/api/public/alertes-email'
+    | '/api/public/corbeille'
     | '/api/public/enrolement'
   fileRoutesById: FileRoutesById
 }
@@ -92,6 +104,7 @@ export interface RootRouteChildren {
   EnrolementRoute: typeof EnrolementRoute
   ServicePriveRoute: typeof ServicePriveRoute
   ApiPublicAlertesEmailRoute: typeof ApiPublicAlertesEmailRoute
+  ApiPublicCorbeilleRoute: typeof ApiPublicCorbeilleRoute
   ApiPublicEnrolementRoute: typeof ApiPublicEnrolementRoute
 }
 
@@ -125,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAlertesEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/corbeille': {
+      id: '/api/public/corbeille'
+      path: '/api/public/corbeille'
+      fullPath: '/api/public/corbeille'
+      preLoaderRoute: typeof ApiPublicCorbeilleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/enrolement': {
       id: '/api/public/enrolement'
       path: '/api/public/enrolement'
@@ -140,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnrolementRoute: EnrolementRoute,
   ServicePriveRoute: ServicePriveRoute,
   ApiPublicAlertesEmailRoute: ApiPublicAlertesEmailRoute,
+  ApiPublicCorbeilleRoute: ApiPublicCorbeilleRoute,
   ApiPublicEnrolementRoute: ApiPublicEnrolementRoute,
 }
 export const routeTree = rootRouteImport

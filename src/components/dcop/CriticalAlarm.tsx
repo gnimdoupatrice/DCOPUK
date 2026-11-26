@@ -181,7 +181,7 @@ export function CriticalAlarm({
             ...(o.arretee !== undefined ? { alarme_arretee_le: o.arretee } : {}),
           }
         : brut;
-      if (c.archived) continue;
+      if (c.archived || c.supprime_le) continue;
       const j = joursRestants(c.date_echeance);
       if (j < 0) continue; // expirée ignorée
 
@@ -245,6 +245,17 @@ export function CriticalAlarm({
   }, [isRinging]);
 
   useEffect(() => () => sirene.current?.stop(), []);
+
+  // Une mise en corbeille ou un archivage coupe immédiatement une alarme déjà affichée.
+  useEffect(() => {
+    if (!activeConvention) return;
+    const source = conventions.find((c) => c.id === activeConvention.id);
+    if (source && !source.supprime_le && !source.archived) return;
+    sirene.current?.stop();
+    setIsRinging(false);
+    setActiveConvention(null);
+    onActiveChange?.(null);
+  }, [conventions, activeConvention, onActiveChange]);
 
   function couperSon() {
     sirene.current?.stop();

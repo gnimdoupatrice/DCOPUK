@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alerteEchueARestaurer, joursAvantPurge, trouverDoublonStrict, type Convention } from "./conventions";
+import { alerteEchueARestaurer, estPurgeDue, etatAlerte, joursAvantPurge, trouverDoublonStrict, type Convention } from "./conventions";
 
 const base = {
   id: "a", pole: "Partenariat International", cadre_juridique: "MoU", partenaire_nom: "Université de Lomé",
@@ -13,6 +13,13 @@ describe("corbeille", () => {
     const now = new Date("2026-06-01T00:00:00Z").getTime();
     expect(joursAvantPurge({ ...base, supprime_le: "2026-06-01T00:00:00Z" }, now)).toBe(30);
     expect(joursAvantPurge({ ...base, supprime_le: "2026-05-02T00:00:00Z" }, now)).toBe(0);
+    expect(estPurgeDue({ ...base, supprime_le: "2026-05-02T00:00:00Z" }, now)).toBe(true);
+    expect(estPurgeDue({ ...base, supprime_le: "2026-05-03T00:00:00Z" }, now)).toBe(false);
+    expect(estPurgeDue(base, now)).toBe(false);
+  });
+  it("une convention en corbeille ne déclenche aucune alarme", () => {
+    const c = { ...base, date_alerte: "2026-05-01", heure_alerte: "08:00", supprime_le: "2026-05-02T00:00:00Z" };
+    expect(etatAlerte(c, new Date("2026-06-01T00:00:00Z").getTime())).toBe("aucune");
   });
   it("doublon seulement si partenaire, pôle, signature et fin identiques", () => {
     const copie = { ...base, id: "b", partenaire_nom: "  université de lomé " };

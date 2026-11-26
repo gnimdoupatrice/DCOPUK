@@ -5,6 +5,8 @@ import { PointsFocauxEditor } from "@/components/dcop/PointsFocauxEditor";
 import { ProjetsEditor } from "@/components/dcop/ProjetsEditor";
 import { telechargerFichePdf } from "@/lib/fiche-pdf";
 import { SuiviEmails } from "@/components/dcop/SuiviEmails";
+import { mettreEnCorbeille } from "@/lib/corbeille";
+import { logHistorique } from "@/lib/historique";
 import { validerPointFocal, validerProjet, type ConventionProjet, type PointFocal } from "@/lib/projets";
 import {
   PDF_BUCKET,
@@ -25,10 +27,6 @@ import {
 
 const inputCls =
   "mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-uk-blue focus:ring-2 focus:ring-uk-blue/20";
-
-export async function logHistorique(conventionId: string, action: string, note?: string | null) {
-  await supabase.from("convention_historique").insert({ convention_id: conventionId, action, note: note || null });
-}
 
 export async function envoyerPdf(conventionId: string, file: File): Promise<string | null> {
   if (file.type !== "application/pdf") return "Seuls les fichiers PDF sont acceptés.";
@@ -214,21 +212,12 @@ export function ConventionDrawer({
   }
 
   async function supprimer() {
-    const saisie = window.prompt(
-      `Suppression définitive de la convention avec « ${c.partenaire_nom} » et de son document PDF.\nCette action est irréversible.\n\nPour confirmer, tapez le nom du partenaire : ${c.partenaire_nom}`,
-    );
-    if (saisie === null) return;
-    if (saisie.trim().toLowerCase() !== c.partenaire_nom.trim().toLowerCase()) {
-      setError("Nom du partenaire incorrect : suppression annulée.");
-      return;
-    }
     setBusy(true);
-    await supabase.from("convention_points_focaux").delete().eq("convention_id", c.id);
-    await supabase.from("convention_projets").delete().eq("convention_id", c.id);
-    if (c.pdf_path) await supabase.storage.from(PDF_BUCKET).remove([c.pdf_path]);
-    const { error } = await supabase.from("conventions").delete().eq("id", c.id);
+    setError(null);
+    const erreur = await mettreEnCorbeille(c);
     setBusy(false);
-    if (error) setError("Suppression impossible : " + error.message);
+    if (erreur === "annule") return;
+    if (erreur) setError(erreur);
     else {
       onChanged();
       onClose();
@@ -379,7 +368,7 @@ export function ConventionDrawer({
                 <ActionBtn icon={Archive} label="Archiver / clôturer" onClick={() => setPanel(panel === "archive" ? null : "archive")} tone="bg-uk-orange text-white" />
               )}
               <ActionBtn icon={Pencil} label="Modifier" onClick={onEdit} tone="bg-uk-blue text-primary-foreground" disabled={!droitModification(c).ok} title={droitModification(c).raison} />
-              <ActionBtn icon={Trash2} label="Supprimer" onClick={supprimer} tone="bg-destructive text-destructive-foreground" />
+              <ActionBtn icon={Trash2} label="Mettre en corbeille" onClick={supprimer} tone="bg-destructive text-destructive-foreground" disabled={busy} />
             </div>
 
             {panel === "avenant" && (

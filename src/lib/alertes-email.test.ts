@@ -58,6 +58,9 @@ describe("déclenchement des e-mails", () => {
   it("n’envoie pas d’alerte pour une convention archivée", () => {
     expect(evenementEmailDu({ ...convention, archived: true }, maintenant)).toBeNull();
   });
+  it("n’envoie aucune alerte pendant le séjour en corbeille", () => {
+    expect(evenementEmailDu({ ...convention, supprime_le: "2026-10-01T08:00:00Z" }, maintenant)).toBeNull();
+  });
   it("respecte l’arrêt définitif", () => {
     expect(evenementEmailDu({ ...convention, alarme_arretee_le: "2026-11-01T05:01:00Z" }, maintenant)).toBeNull();
   });

@@ -9,7 +9,7 @@ export type ConventionEmail = Convention & {
 
 /** Le calendrier métier reste celui de conventions.ts ; Lomé est à UTC+0. */
 export function evenementEmailDu(c: ConventionEmail, now: Date) {
-  if (c.archived || c.alarme_arretee_le || c.date_echeance < now.toISOString().slice(0, 10)) return null;
+  if (c.supprime_le || c.archived || c.alarme_arretee_le || c.date_echeance < now.toISOString().slice(0, 10)) return null;
   const type: TypeEmailAlerte = c.alarme_reportee_jusqu_a ? "report" : "alerte";
   const moment = c.alarme_reportee_jusqu_a ? new Date(c.alarme_reportee_jusqu_a) : momentAlerteConvention(c);
   if (!moment || !Number.isFinite(moment.getTime()) || moment.getTime() > now.getTime()) return null;

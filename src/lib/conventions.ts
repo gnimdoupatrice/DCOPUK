@@ -215,6 +215,7 @@ export function momentReferenceAlerte(c: Convention): Date | null {
  * immédiatement (à la connexion ou en cours de navigation) jusqu'à arbitrage.
  */
 export function etatAlerte(c: Convention, now: number = Date.now()): EtatAlerte {
+  if (c.supprime_le) return "aucune";
   if (c.alarme_arretee_le) return "arretee";
   const m = momentReferenceAlerte(c);
   if (!m) return "aucune";
@@ -445,6 +446,13 @@ export function joursAvantPurge(c: Convention, now: number = Date.now()): number
   if (!c.supprime_le) return CORBEILLE_JOURS;
   const fin = new Date(c.supprime_le).getTime() + CORBEILLE_JOURS * 86_400_000;
   return Math.max(0, Math.ceil((fin - now) / 86_400_000));
+}
+
+/** La purge n'est possible qu'à partir du 30e jour complet passé en corbeille. */
+export function estPurgeDue(c: Pick<Convention, "supprime_le">, now: number = Date.now()): boolean {
+  if (!c.supprime_le) return false;
+  const suppression = new Date(c.supprime_le).getTime();
+  return Number.isFinite(suppression) && suppression + CORBEILLE_JOURS * 86_400_000 <= now;
 }
 
 /** Doublon strict : même partenaire (casse/espaces ignorés), même pôle, même date de signature et même date de fin. */
