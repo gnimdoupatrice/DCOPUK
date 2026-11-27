@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabase";
 
+async function auteur(): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  return data.user?.email ?? "utilisateur inconnu";
+}
+
 export async function reporterAlerte(id: string, cibleLocale: string) {
   const targetIso = new Date(cibleLocale).toISOString();
   await supabase
@@ -9,7 +14,7 @@ export async function reporterAlerte(id: string, cibleLocale: string) {
   await supabase.from("convention_historique").insert({
     convention_id: id,
     action: "Alerte reportée",
-    note: `Alerte reportée jusqu'au ${new Date(cibleLocale).toLocaleString("fr-FR")}`,
+    note: `Alerte reportée jusqu'au ${new Date(cibleLocale).toLocaleString("fr-FR")} par ${await auteur()}`,
   });
   return targetIso;
 }
@@ -23,7 +28,7 @@ export async function arreterAlerte(id: string) {
   await supabase.from("convention_historique").insert({
     convention_id: id,
     action: "Alerte arrêtée définitivement",
-    note: "Le Directeur a pris acte et a désactivé les sonneries de cette échéance.",
+    note: `${await auteur()} a pris acte et a désactivé les sonneries de cette échéance.`,
   });
   return nowIso;
 }

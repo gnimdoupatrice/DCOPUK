@@ -232,3 +232,8 @@ alter table public.conventions add column if not exists supprime_le timestamptz;
 alter table public.conventions add column if not exists supprime_par uuid references auth.users(id) on delete set null;
 alter table public.conventions add column if not exists motif_suppression text;
 create index if not exists idx_conventions_corbeille on public.conventions(supprime_le) where supprime_le is not null;
+
+-- Temps réel : propage immédiatement l'arrêt / le report d'une alerte à tous les postes connectés.
+do $$ begin
+  alter publication supabase_realtime add table public.conventions;
+exception when duplicate_object then null; end $$;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BellRing, Clock, CheckCircle, Volume2, Phone, MessageCircle } from "lucide-react";
+import { BellRing, Clock, CheckCircle, Volume2, VolumeX, Phone, MessageCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { arreterAlerte, reporterAlerte } from "@/components/dcop/RegulariserAlerte";
 import { SuiviEmails } from "@/components/dcop/SuiviEmails";
@@ -70,8 +70,15 @@ class SireneLimitee {
       if (head.ok && (head.headers.get("content-type") ?? "").startsWith("audio")) {
         const a = new Audio(AUDIO_PERSO);
         a.loop = true; // boucle continue pendant la minute
+        a.volume = 0.15;
         await a.play();
         this.audio = a;
+        // Volume progressif sur ~6 secondes
+        this.timer = window.setInterval(() => {
+          if (!this.audio) return;
+          this.audio.volume = Math.min(0.8, this.audio.volume + 0.1);
+          if (this.audio.volume >= 0.8 && this.timer) { window.clearInterval(this.timer); this.timer = null; }
+        }, 800);
         return;
       }
     } catch {
@@ -92,23 +99,23 @@ class SireneLimitee {
       if (!ctx) return;
       if (ctx.state === "suspended") void ctx.resume();
 
-      [0, 0.25, 0.5].forEach((t, i) => {
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
-        o.type = "square";
-        o.frequency.value = i === 2 ? 1046.5 : 880;
-        const s = ctx.currentTime + t;
+        o.type = "sine";
+        o.frequency.value = f;
+        const s = ctx.currentTime + i * 0.35;
         g.gain.setValueAtTime(0.0001, s);
-        g.gain.exponentialRampToValueAtTime(0.18, s + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.2);
+        g.gain.exponentialRampToValueAtTime(0.12, s + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + 1.2);
         o.connect(g).connect(ctx.destination);
         o.start(s);
-        o.stop(s + 0.22);
+        o.stop(s + 1.25);
       });
     };
 
     bip();
-    this.timer = window.setInterval(bip, 1400);
+    this.timer = window.setInterval(bip, 3000);
   }
 
   resume() {
@@ -155,6 +162,29 @@ export function CriticalAlarm({
   const [showSnoozeInput, setShowSnoozeInput] = useState(false);
   const [suiviVersion, setSuiviVersion] = useState(0);
   const sirene = useRef<SireneLimitee | null>(null);
+  const [sonCoupe, setSonCoupe] = useState(false);
+  const canal = useRef<BroadcastChannel | null>(null);
+
+  // Coordination entre onglets : un seul onglet sonne, couper le son coupe partout sur ce poste.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("dcop-alarme");
+    ch.onmessage = (e) => {
+      if (e.data?.type === "mute") { sirene.current?.stop(); setIsRinging(false); setSonCoupe(true); }
+    };
+    canal.current = ch;
+    return () => ch.close();
+  }, []);
+
+  // Synchronisation temps réel : une décision prise par un collègue recharge le registre.
+  useEffect(() => {
+    const ch = supabase
+      .channel("conventions-alarme")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conventions" }, () => onRefresh?.())
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Vérification chaque minute
   useEffect(() => {
@@ -215,11 +245,22 @@ export function CriticalAlarm({
     setSnoozeDateTime(localIso);
 
     // Déclenchement de la sonnerie pour 1 minute
-    if (!sirene.current) sirene.current = new SireneLimitee();
-    setIsRinging(true);
-    void sirene.current.start(() => {
-      setIsRinging(false);
-    });
+    setSonCoupe(false);
+    // Un seul onglet sonne par alerte sur ce poste
+    const verrou = `dcop-alarme-sonne:${key}`;
+    let autreOnglet = false;
+    try {
+      const v = Number(localStorage.getItem(verrou) ?? 0);
+      autreOnglet = Date.now() - v < DUREE_ALARME_MS + 10_000;
+      if (!autreOnglet) localStorage.setItem(verrou, String(Date.now()));
+    } catch { /* stockage indisponible */ }
+    if (!autreOnglet) {
+      if (!sirene.current) sirene.current = new SireneLimitee();
+      setIsRinging(true);
+      void sirene.current.start(() => {
+        setIsRinging(false);
+      });
+    }
 
     // Envoi immédiat des e-mails à la seconde où l'alarme sonne (anti-doublon côté serveur).
     void (async () => {
@@ -250,7 +291,8 @@ export function CriticalAlarm({
   useEffect(() => {
     if (!activeConvention) return;
     const source = conventions.find((c) => c.id === activeConvention.id);
-    if (source && !source.supprime_le && !source.archived) return;
+    const reportFutur = source?.alarme_reportee_jusqu_a && new Date(source.alarme_reportee_jusqu_a).getTime() > Date.now();
+    if (source && !source.supprime_le && !source.archived && !source.alarme_arretee_le && !reportFutur) return;
     sirene.current?.stop();
     setIsRinging(false);
     setActiveConvention(null);
@@ -261,6 +303,28 @@ export function CriticalAlarm({
     sirene.current?.stop();
     setIsRinging(false);
   }
+
+  // Coupure locale (ce poste uniquement) : l'alerte reste ouverte.
+  function couperSonLocal() {
+    couperSon();
+    setSonCoupe(true);
+    canal.current?.postMessage({ type: "mute" });
+  }
+
+  function remettreSon() {
+    if (!sirene.current) sirene.current = new SireneLimitee();
+    setSonCoupe(false);
+    setIsRinging(true);
+    void sirene.current.start(() => setIsRinging(false));
+  }
+
+  useEffect(() => {
+    if (!isRinging) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") couperSonLocal(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRinging]);
 
   // Arrêt définitif de l'alarme pour  CETTE CONVENTION is ok
   async function arreterDefinitivement() {
@@ -309,15 +373,32 @@ export function CriticalAlarm({
         </div>
 
         <div className="space-y-4 p-5 text-sm text-foreground">
-          {isRinging && (
+          {isRinging ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => sirene.current?.resume()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive"
+              >
+                <Volume2 className="h-4 w-4 animate-pulse" /> Vous n'entendez rien ? Cliquez ici
+              </button>
+              <button
+                type="button"
+                onClick={couperSonLocal}
+                className="flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold"
+              >
+                <VolumeX className="h-4 w-4" /> Couper la sonnerie (ce poste)
+              </button>
+            </div>
+          ) : sonCoupe ? (
             <button
               type="button"
-              onClick={() => sirene.current?.resume()}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive"
+              onClick={remettreSon}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold"
             >
-              <Volume2 className="h-4 w-4 animate-pulse" /> Alerte sonore active — cliquez ici si vous n'entendez rien
+              <Volume2 className="h-4 w-4" /> Sonnerie coupée sur ce poste — remettre le son
             </button>
-          )}
+          ) : null}
           <div className="rounded-xl border border-border bg-muted/60 p-4">
             <p className="text-base font-bold text-uk-blue">{activeConvention.partenaire_nom}</p>
             <p className="text-xs text-muted-foreground">
